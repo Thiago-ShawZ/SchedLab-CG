@@ -1,6 +1,6 @@
-import { useRef, useState, useMemo, Suspense } from 'react';
+import React, { useRef, useState, useMemo, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Environment, Html, AccumulativeShadows, SoftShadows } from '@react-three/drei';
+import { OrbitControls, Environment, Html, AccumulativeShadows, SoftShadows, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import type { Product } from '@/types/product';
 import PlaceholderBottle from './PlaceholderBottle';
@@ -31,6 +31,145 @@ const COLOR_BY_CATEGORY: Record<string, string> = {
 
 const SHELF_WOOD_COLOR = '#3a322a';
 const SHELF_WOOD_DARK = '#2a241e';
+
+// Shelf surface is 0.46 below each product's group origin
+const SHELF_SURFACE_Y = -0.46;
+const SHELF_MODEL_TARGET = 0.85;
+const EMISSIVE_HOVER = new THREE.Color('#43c497');
+const EMISSIVE_SELECTED = new THREE.Color('#1fa87d');
+
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode; onError: () => void },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode; onError: () => void }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch() {
+    this.props.onError();
+  }
+  render() {
+    if (this.state.hasError) return null;
+    return this.props.children;
+  }
+}
+
+function ShelfGLBModel({
+  modelPath,
+  hovered,
+  selected,
+}: {
+  modelPath: string;
+  hovered: boolean;
+  selected: boolean;
+}) {
+  const { scene } = useGLTF(modelPath);
+  const cloned = useRef<THREE.Group>(scene.clone(true)).current;
+
+  const { scaleFactor, position, meshes } = useMemo(() => {
+    const box = new THREE.Box3().setFromObject(cloned);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const sf = maxDim > 0 ? SHELF_MODEL_TARGET / maxDim : 1;
+    const posY = SHELF_SURFACE_Y - box.min.y * sf;
+
+    const meshList: THREE.Mesh[] = [];
+    cloned.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (mesh.isMesh) {
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        meshList.push(mesh);
+      }
+    });
+
+    return {
+      scaleFactor: sf,
+      position: [-center.x * sf, posY, -center.z * sf] as [number, number, number],
+      meshes: meshList,
+    };
+  }, [cloned]);
+
+  const emissiveIntensity = useRef(0);
+
+  useFrame((_, delta) => {
+    const target = selected ? 0.3 : hovered ? 0.15 : 0;
+    if (Math.abs(emissiveIntensity.current - target) < 0.005) return;
+    emissiveIntensity.current = THREE.MathUtils.lerp(
+      emissiveIntensity.current,
+      target,
+      1 - Math.exp(-delta * 8),
+    );
+    const color = selected ? EMISSIVE_SELECTED : EMISSIVE_HOVER;
+    for (const mesh of meshes) {
+      const mat = mesh.material as THREE.MeshStandardMaterial;
+      if (mat && mat.emissive) {
+        mat.emissive.copy(color);
+        mat.emissiveIntensity = emissiveIntensity.current;
+      }
+    }
+  });
+
+  return (
+    <group scale={scaleFactor} position={position}>
+      <primitive object={cloned} />
+    </group>
+  );
+}
+
+function ShelfProductModel({
+  modelPath,
+  placeholderColor,
+  placeholderShape,
+  hovered,
+  selected,
+}: {
+  modelPath: string;
+  placeholderColor: string;
+  placeholderShape: 'bottle' | 'tube' | 'jar' | 'dropper';
+  hovered: boolean;
+  selected: boolean;
+}) {
+  const [error, setError] = useState(false);
+
+  if (error) {
+    return (
+      <PlaceholderBottle
+        color={placeholderColor}
+        shape={placeholderShape}
+        hovered={hovered}
+        selected={selected}
+        scale={0.55}
+      />
+    );
+  }
+
+  return (
+    <Suspense
+      fallback={
+        <PlaceholderBottle
+          color={placeholderColor}
+          shape={placeholderShape}
+          hovered={hovered}
+          selected={selected}
+          scale={0.55}
+        />
+      }
+    >
+      <ErrorBoundary onError={() => setError(true)}>
+        <ShelfGLBModel modelPath={modelPath} hovered={hovered} selected={selected} />
+      </ErrorBoundary>
+    </Suspense>
+  );
+}
 
 interface ShelfProductProps {
   product: Product;
@@ -82,15 +221,13 @@ function ShelfProduct({ product, position, onSelect, selectedId }: ShelfProductP
       }}
     >
       <group ref={liftRef}>
-        <Suspense fallback={null}>
-          <PlaceholderBottle
-            color={color}
-            shape={shape}
-            hovered={hovered}
-            selected={isSelected}
-            scale={0.55}
-          />
-        </Suspense>
+        <ShelfProductModel
+          modelPath={product.modelPath}
+          placeholderColor={color}
+          placeholderShape={shape}
+          hovered={hovered}
+          selected={isSelected}
+        />
       </group>
 
       {/* Hover/selected tooltip */}
@@ -282,3 +419,11 @@ export default function HairShelf3D({ products, onSelect, compact = false }: Hai
     </div>
   );
 }
+
+// Preload all product GLB models so they're cached for both shelf and detail views
+useGLTF.preload('/models/shampoo.glb');
+useGLTF.preload('/models/conditioner.glb');
+useGLTF.preload('/models/mask.glb');
+useGLTF.preload('/models/leavein.glb');
+useGLTF.preload('/models/oil.glb');
+useGLTF.preload('/models/creme.glb');
