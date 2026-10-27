@@ -25,6 +25,11 @@ const COLOR_BY_CATEGORY: Record<string, string> = {
   'Creme para pentear': '#ec4899',
 };
 
+// Clipping planes — recorta elementos abaixo da base do produto
+const VIEWER_CLIP_PLANES = [
+  new THREE.Plane(new THREE.Vector3(0, 1, 0), 1.33),
+];
+
 interface ProductViewer3DProps {
   product: Product;
   autoRotate?: boolean;
@@ -37,7 +42,7 @@ function Turntable({ color }: { color: string }) {
       {/* Platform */}
       <mesh receiveShadow castShadow>
         <cylinderGeometry args={[1.1, 1.15, 0.08, 64]} />
-        <meshStandardMaterial color="#1e222a" roughness={0.4} metalness={0.3} />
+        <meshStandardMaterial color="#1e222a" roughness={0.4} metalness={0.3} clippingPlanes={VIEWER_CLIP_PLANES} />
       </mesh>
       {/* Accent ring */}
       <mesh position={[0, 0.045, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -48,6 +53,7 @@ function Turntable({ color }: { color: string }) {
           emissiveIntensity={0.3}
           roughness={0.3}
           metalness={0.5}
+          clippingPlanes={VIEWER_CLIP_PLANES}
         />
       </mesh>
     </group>
@@ -68,7 +74,7 @@ export default function ProductViewer3D({
         shadows={{ type: THREE.PCFShadowMap }}
         dpr={[1, 1.5]}
         camera={{ position: [0, 0.3, 4.2], fov: 40 }}
-        gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
+        gl={{ antialias: true, alpha: true, powerPreference: 'high-performance', localClippingEnabled: true }}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
           gl.toneMappingExposure = 1.15;

@@ -38,6 +38,12 @@ const SHELF_MODEL_TARGET = 0.85;
 const EMISSIVE_HOVER = new THREE.Color('#43c497');
 const EMISSIVE_SELECTED = new THREE.Color('#1fa87d');
 
+// Clipping planes — recorta elementos fora da região de visualização da estante
+// Clip behind the back wall (z < -1.25) so nothing behind the shelf is visible
+const SHELF_CLIP_PLANES = [
+  new THREE.Plane(new THREE.Vector3(0, 0, 1), 1.25),
+];
+
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode; onError: () => void },
   { hasError: boolean }
@@ -284,20 +290,20 @@ function Shelf({ products, onSelect, selectedId }: ShelfProps) {
       {/* Back wall with subtle gradient feel */}
       <mesh position={[0, 1.5, -1.2]} receiveShadow>
         <boxGeometry args={[7, 5, 0.1]} />
-        <meshStandardMaterial color="#1a1d24" roughness={0.95} metalness={0} />
+        <meshStandardMaterial color="#1a1d24" roughness={0.95} metalness={0} clippingPlanes={SHELF_CLIP_PLANES} />
       </mesh>
 
       {/* Floor */}
       <mesh position={[0, -0.5, 0]} receiveShadow>
         <boxGeometry args={[8, 0.1, 4]} />
-        <meshStandardMaterial color="#1e222a" roughness={0.85} metalness={0.05} />
+        <meshStandardMaterial color="#1e222a" roughness={0.85} metalness={0.05} clippingPlanes={SHELF_CLIP_PLANES} />
       </mesh>
 
       {/* Shelves — wood-like */}
       {[0, 1.6, 3.2].map((y, i) => (
         <mesh key={i} position={[0, y - 0.5, 0]} receiveShadow castShadow>
           <boxGeometry args={[6.5, 0.08, 1.8]} />
-          <meshStandardMaterial color={SHELF_WOOD_COLOR} roughness={0.7} metalness={0.05} />
+          <meshStandardMaterial color={SHELF_WOOD_COLOR} roughness={0.7} metalness={0.05} clippingPlanes={SHELF_CLIP_PLANES} />
         </mesh>
       ))}
 
@@ -305,14 +311,14 @@ function Shelf({ products, onSelect, selectedId }: ShelfProps) {
       {[-3.25, 3.25].map((x, i) => (
         <mesh key={`side-${i}`} position={[x, 1.5, 0]} castShadow receiveShadow>
           <boxGeometry args={[0.1, 4, 1.8]} />
-          <meshStandardMaterial color={SHELF_WOOD_DARK} roughness={0.75} metalness={0.05} />
+          <meshStandardMaterial color={SHELF_WOOD_DARK} roughness={0.75} metalness={0.05} clippingPlanes={SHELF_CLIP_PLANES} />
         </mesh>
       ))}
 
       {/* Top shelf board */}
       <mesh position={[0, 3.7, 0]} castShadow receiveShadow>
         <boxGeometry args={[6.5, 0.08, 1.8]} />
-        <meshStandardMaterial color={SHELF_WOOD_COLOR} roughness={0.7} metalness={0.05} />
+        <meshStandardMaterial color={SHELF_WOOD_COLOR} roughness={0.7} metalness={0.05} clippingPlanes={SHELF_CLIP_PLANES} />
       </mesh>
 
       {/* Products */}
@@ -350,7 +356,7 @@ export default function HairShelf3D({ products, onSelect, compact = false }: Hai
         shadows={{ type: THREE.PCFShadowMap }}
         dpr={[1, 1.5]}
         camera={{ position: [0, cameraHeight, cameraDistance], fov: 42 }}
-        gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
+        gl={{ antialias: true, alpha: true, powerPreference: 'high-performance', localClippingEnabled: true }}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
           gl.toneMappingExposure = 1.1;
