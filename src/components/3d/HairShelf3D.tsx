@@ -77,7 +77,87 @@ function ShelfGLBModel({
   const cloned = useRef<THREE.Group>(scene.clone(true)).current;
 
   const { scaleFactor, position, meshes } = useMemo(() => {
-    const box = new THREE.Box3().setFromObject(cloned);
+    cloned.updateMatrixWorld(true);
+
+    const box = new THREE.Box3();
+    let hasValidMesh = false;
+    const meshList: THREE.Mesh[] = [];
+
+    cloned.traverse((child) => {
+      // Ignora câmeras, luzes e elementos de estúdio
+      if ((child as any).isCamera || (child as any).isLight) {
+        child.visible = false;
+        return;
+      }
+      if (/stage|floor|ground|backdrop|studio|shadow_plane/i.test(child.name)) {
+        child.visible = false;
+        return;
+      }
+
+      const mesh = child as THREE.Mesh;
+      if (mesh.isMesh && child.visible) {
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        const processMaterial = (original: THREE.Material): THREE.Material => {
+          /* 
+           * PBR (Physically Based Rendering):
+           * Converte e aprimora materiais dos modelos para MeshPhysicalMaterial.
+           * Aplica clearcoat (verniz), baixa rugosidade e baixo metalness para plástico cosmético.
+           */
+          const physicalMat = new THREE.MeshPhysicalMaterial();
+
+          if (original instanceof THREE.MeshStandardMaterial) {
+            physicalMat.copy(original);
+          } else {
+            if ('color' in original && (original as any).color) {
+              physicalMat.color.copy((original as any).color);
+            }
+            if ('map' in original && (original as any).map) {
+              physicalMat.map = (original as any).map;
+            }
+          }
+
+          physicalMat.roughness = THREE.MathUtils.clamp(
+            physicalMat.roughness > 0 ? physicalMat.roughness : 0.28,
+            0.18,
+            0.4
+          );
+          physicalMat.metalness = Math.min(physicalMat.metalness, 0.15);
+          physicalMat.clearcoat = 0.8;
+          physicalMat.clearcoatRoughness = 0.15;
+          physicalMat.envMapIntensity = 1.1;
+
+          return physicalMat;
+        };
+
+        // Clone material to avoid mutating shared materials from the GLTF cache
+        if (Array.isArray(mesh.material)) {
+          mesh.material = mesh.material.map(processMaterial);
+        } else if (mesh.material) {
+          mesh.material = processMaterial(mesh.material);
+        }
+        meshList.push(mesh);
+
+        if (mesh.geometry) {
+          mesh.geometry.computeBoundingBox();
+          if (mesh.geometry.boundingBox) {
+            const meshBox = mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld);
+            const meshSize = new THREE.Vector3();
+            meshBox.getSize(meshSize);
+            if (meshSize.x < 35 && meshSize.y < 35 && meshSize.z < 35) {
+              box.union(meshBox);
+              hasValidMesh = true;
+            }
+          }
+        }
+      }
+    });
+
+    if (!hasValidMesh) {
+      box.setFromObject(cloned);
+    }
+
     const size = new THREE.Vector3();
     box.getSize(size);
     const center = new THREE.Vector3();
@@ -86,22 +166,6 @@ function ShelfGLBModel({
     const maxDim = Math.max(size.x, size.y, size.z);
     const sf = maxDim > 0 ? SHELF_MODEL_TARGET / maxDim : 1;
     const posY = SHELF_SURFACE_Y - box.min.y * sf;
-
-    const meshList: THREE.Mesh[] = [];
-    cloned.traverse((child) => {
-      const mesh = child as THREE.Mesh;
-      if (mesh.isMesh) {
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        // Clone material to avoid mutating shared materials from the GLTF cache
-        if (Array.isArray(mesh.material)) {
-          mesh.material = mesh.material.map((m) => m.clone());
-        } else if (mesh.material) {
-          mesh.material = mesh.material.clone();
-        }
-        meshList.push(mesh);
-      }
-    });
 
     return {
       scaleFactor: sf,

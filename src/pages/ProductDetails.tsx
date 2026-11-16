@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { useRef, Suspense, lazy } from 'react';
+import { useRef, useState, useCallback, Suspense, lazy } from 'react';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import {
   ArrowLeft,
@@ -12,6 +12,10 @@ import {
   BookOpen,
   Beaker,
   AlertCircle,
+  Scissors,
+  RotateCcw,
+  LogOut,
+  X,
 } from 'lucide-react';
 import { PRODUCTS } from '@/data/products';
 import SourceList from '@/components/ui/SourceList';
@@ -22,7 +26,41 @@ export default function ProductDetails() {
   const { id } = useParams<{ id: string }>();
   const controlsRef = useRef<OrbitControlsImpl>(null);
 
+  // Cut mode state
+  const [isCutActive, setIsCutActive] = useState(false);
+  const [planeY, setPlaneY] = useState(0);
+  const [planeAngle, setPlaneAngle] = useState(0);
+  const [confirmCutTrigger, setConfirmCutTrigger] = useState(0);
+  const [resetCutTrigger, setResetCutTrigger] = useState(0);
+
   const product = PRODUCTS.find((p) => p.id === id);
+
+  const handlePlaneChange = useCallback((y: number, angle: number) => {
+    setPlaneY(y);
+    setPlaneAngle(angle);
+  }, []);
+
+  const toggleCutMode = () => {
+    if (isCutActive) {
+      handleExitCut();
+    } else {
+      setIsCutActive(true);
+    }
+  };
+
+  const handleConfirmCut = () => {
+    setConfirmCutTrigger((c) => c + 1);
+  };
+
+  const handleResetPlane = () => {
+    setPlaneY(0);
+    setPlaneAngle(0);
+  };
+
+  const handleExitCut = () => {
+    setIsCutActive(false);
+    setResetCutTrigger((c) => c + 1);
+  };
 
   if (!product) {
     return (
@@ -79,8 +117,115 @@ export default function ProductDetails() {
                 </div>
               }
             >
-              <ProductViewer3D product={product} autoRotate controlsRef={controlsRef} />
+              <ProductViewer3D
+                product={product}
+                autoRotate
+                controlsRef={controlsRef}
+                isCutActive={isCutActive}
+                planeY={planeY}
+                planeAngle={planeAngle}
+                onPlaneChange={handlePlaneChange}
+                confirmCutTrigger={confirmCutTrigger}
+                resetCutTrigger={resetCutTrigger}
+              />
             </Suspense>
+
+            {/* Cut mode panel */}
+            {isCutActive && (
+              <div className="absolute left-3 top-3 z-10 w-64 rounded-xl border border-ink-700/80 bg-ink-900/95 p-3.5 shadow-xl backdrop-blur-md animate-fadeIn">
+                <div className="flex items-center justify-between border-b border-ink-800 pb-2">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-brand-400">
+                    <Scissors className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Corte de Seção</span>
+                  </div>
+                  <button
+                    onClick={handleExitCut}
+                    className="rounded-md p-1 text-ink-400 hover:bg-ink-800 hover:text-white focus-visible:ring-2 focus-visible:ring-brand-400"
+                    aria-label="Sair do modo de corte"
+                    title="Fechar painel de corte"
+                  >
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+
+                <div className="mt-3 space-y-3 text-xs">
+                  {/* Slider Altura do plano */}
+                  <div>
+                    <div className="mb-1 flex justify-between text-ink-300">
+                      <span>Altura do plano (Y)</span>
+                      <span className="font-mono text-brand-300">{planeY.toFixed(2)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={-1.1}
+                      max={1.1}
+                      step={0.02}
+                      value={planeY}
+                      onChange={(e) => setPlaneY(parseFloat(e.target.value))}
+                      className="h-1.5 w-full cursor-pointer rounded-lg bg-ink-700 accent-brand-500"
+                      aria-label="Altura do plano de corte"
+                    />
+                  </div>
+
+                  {/* Slider Ângulo do plano */}
+                  <div>
+                    <div className="mb-1 flex justify-between text-ink-300">
+                      <span>Ângulo do plano (X)</span>
+                      <span className="font-mono text-brand-300">
+                        {Math.round((planeAngle * 180) / Math.PI)}°
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={-45}
+                      max={45}
+                      step={1}
+                      value={Math.round((planeAngle * 180) / Math.PI)}
+                      onChange={(e) =>
+                        setPlaneAngle((parseInt(e.target.value, 10) * Math.PI) / 180)
+                      }
+                      className="h-1.5 w-full cursor-pointer rounded-lg bg-ink-700 accent-brand-500"
+                      aria-label="Ângulo do plano de corte"
+                    />
+                  </div>
+
+                  {/* Botões de ação */}
+                  <div className="flex flex-col gap-1.5 pt-1">
+                    <button
+                      onClick={handleConfirmCut}
+                      className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand-500 py-1.5 font-medium text-white transition-colors hover:bg-brand-600 focus-visible:ring-2 focus-visible:ring-brand-400"
+                      aria-label="Confirmar corte"
+                      title="Confirmar corte e enquadrar região cortada"
+                    >
+                      <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>Confirmar corte</span>
+                    </button>
+
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        onClick={handleResetPlane}
+                        className="flex items-center justify-center gap-1 rounded-lg border border-ink-700 bg-ink-800/80 py-1.5 text-ink-200 transition-colors hover:bg-ink-700 hover:text-white focus-visible:ring-2 focus-visible:ring-brand-400"
+                        aria-label="Resetar plano"
+                        title="Resetar altura e ângulo"
+                      >
+                        <RotateCcw className="h-3 w-3" aria-hidden="true" />
+                        <span>Resetar plano</span>
+                      </button>
+
+                      <button
+                        onClick={handleExitCut}
+                        className="flex items-center justify-center gap-1 rounded-lg border border-ink-700 bg-ink-800/80 py-1.5 text-ink-200 transition-colors hover:bg-ink-700 hover:text-white focus-visible:ring-2 focus-visible:ring-brand-400"
+                        aria-label="Sair do modo de corte"
+                        title="Sair do corte e restaurar câmera"
+                      >
+                        <LogOut className="h-3 w-3" aria-hidden="true" />
+                        <span>Sair do corte</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Controls overlay */}
             <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-ink-700 bg-ink-900/90 px-2 py-1.5 backdrop-blur-md">
@@ -109,10 +254,26 @@ export default function ProductDetails() {
               >
                 <RotateCw className="h-5 w-5" aria-hidden="true" />
               </button>
+              <div className="h-5 w-px bg-ink-700" />
+              <button
+                onClick={toggleCutMode}
+                className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-brand-400 ${
+                  isCutActive
+                    ? 'bg-brand-500 text-white shadow-sm shadow-brand-500/30'
+                    : 'text-ink-200 hover:bg-ink-700 hover:text-white'
+                }`}
+                aria-label={isCutActive ? 'Sair do modo de corte' : 'Ativar modo de corte'}
+                title={isCutActive ? 'Sair do corte' : 'Cortar seção'}
+              >
+                <Scissors className="h-5 w-5" aria-hidden="true" />
+              </button>
             </div>
 
-            <div className="absolute right-3 top-3 rounded-full bg-ink-900/80 px-2.5 py-1 text-xs text-ink-300 backdrop-blur-sm" role="note">
-              Arraste para girar
+            <div
+              className="absolute right-3 top-3 rounded-full bg-ink-900/80 px-2.5 py-1 text-xs text-ink-300 backdrop-blur-sm"
+              role="note"
+            >
+              {isCutActive ? 'Modo de corte ativo' : 'Arraste para girar'}
             </div>
           </div>
         </div>

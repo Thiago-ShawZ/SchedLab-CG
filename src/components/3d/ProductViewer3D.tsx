@@ -1,10 +1,11 @@
-import { Suspense } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Suspense, useMemo, useRef, useEffect } from 'react';
+import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import * as THREE from 'three';
 import ProductModel3D from './ProductModel3D';
 import PlaceholderBottle from './PlaceholderBottle';
+import ClippingPlaneHelper from './ClippingPlaneHelper';
 import type { Product } from '@/types/product';
 
 const SHAPE_BY_CATEGORY: Record<string, 'bottle' | 'tube' | 'jar' | 'dropper'> = {
@@ -34,6 +35,12 @@ interface ProductViewer3DProps {
   product: Product;
   autoRotate?: boolean;
   controlsRef?: React.MutableRefObject<OrbitControlsImpl | null>;
+  isCutActive?: boolean;
+  planeY?: number;
+  planeAngle?: number;
+  onPlaneChange?: (y: number, angle: number) => void;
+  confirmCutTrigger?: number;
+  resetCutTrigger?: number;
 }
 
 function Turntable({ color }: { color: string }) {
@@ -60,13 +67,106 @@ function Turntable({ color }: { color: string }) {
   );
 }
 
+function CutCameraController({
+  confirmTrigger = 0,
+  resetTrigger = 0,
+  planeY = 0,
+  controlsRef,
+}: {
+  confirmTrigger?: number;
+  resetTrigger?: number;
+  planeY?: number;
+  controlsRef?: React.MutableRefObject<OrbitControlsImpl | null>;
+}) {
+  const { camera } = useThree();
+  const isAnimating = useRef(false);
+  const animStartTime = useRef(0);
+  const startPos = useRef(new THREE.Vector3());
+  const targetPos = useRef(new THREE.Vector3());
+  const startTarget = useRef(new THREE.Vector3());
+  const endTarget = useRef(new THREE.Vector3());
+
+  const prevConfirm = useRef(confirmTrigger);
+  const prevReset = useRef(resetTrigger);
+
+  useEffect(() => {
+    if (confirmTrigger > 0 && confirmTrigger !== prevConfirm.current) {
+      prevConfirm.current = confirmTrigger;
+      startPos.current.copy(camera.position);
+      startTarget.current.copy(controlsRef?.current?.target || new THREE.Vector3(0, 0, 0));
+
+      // Dolly closer and look at cut section
+      targetPos.current.set(0, planeY + 0.9, 2.6);
+      endTarget.current.set(0, planeY, 0);
+
+      animStartTime.current = performance.now();
+      isAnimating.current = true;
+    }
+  }, [confirmTrigger, planeY, camera, controlsRef]);
+
+  useEffect(() => {
+    if (resetTrigger > 0 && resetTrigger !== prevReset.current) {
+      prevReset.current = resetTrigger;
+      startPos.current.copy(camera.position);
+      startTarget.current.copy(controlsRef?.current?.target || new THREE.Vector3(0, 0, 0));
+
+      // Restore camera to initial position
+      targetPos.current.set(0, 0.3, 4.2);
+      endTarget.current.set(0, 0, 0);
+
+      animStartTime.current = performance.now();
+      isAnimating.current = true;
+    }
+  }, [resetTrigger, camera, controlsRef]);
+
+  useFrame(() => {
+    if (!isAnimating.current) return;
+    const elapsed = (performance.now() - animStartTime.current) / 1000;
+    const t = Math.min(elapsed / 1.0, 1.0);
+    // 1s cubic ease-out
+    const ease = 1 - Math.pow(1 - t, 3);
+
+    camera.position.lerpVectors(startPos.current, targetPos.current, ease);
+    if (controlsRef?.current) {
+      controlsRef.current.target.lerpVectors(startTarget.current, endTarget.current, ease);
+      controlsRef.current.update();
+    }
+
+    if (t >= 1) {
+      isAnimating.current = false;
+    }
+  });
+
+  return null;
+}
+
 export default function ProductViewer3D({
   product,
   autoRotate = true,
   controlsRef,
+  isCutActive = false,
+  planeY = 0,
+  planeAngle = 0,
+  onPlaneChange,
+  confirmCutTrigger = 0,
+  resetCutTrigger = 0,
 }: ProductViewer3DProps) {
   const shape = SHAPE_BY_CATEGORY[product.category] ?? 'bottle';
   const color = COLOR_BY_CATEGORY[product.category] ?? '#1fa87d';
+
+  // Clipping plane calculated from normal and coplanar point
+  const clippingPlane = useMemo(() => {
+    const normal = new THREE.Vector3(0, -1, 0).applyAxisAngle(
+      new THREE.Vector3(1, 0, 0),
+      planeAngle,
+    );
+    const point = new THREE.Vector3(0, planeY, 0);
+    return new THREE.Plane().setFromNormalAndCoplanarPoint(normal, point);
+  }, [planeY, planeAngle]);
+
+  const clippingPlanes = useMemo(() => {
+    return isCutActive ? [clippingPlane] : [];
+  }, [isCutActive, clippingPlane]);
 
   return (
     <div className="w-full h-full" role="img" aria-label={`Modelo 3D de ${product.name}`}>
@@ -74,18 +174,21 @@ export default function ProductViewer3D({
         shadows={{ type: THREE.PCFShadowMap }}
         dpr={[1, 1.5]}
         camera={{ position: [0, 0.3, 4.2], fov: 40 }}
-        gl={{ antialias: true, alpha: true, powerPreference: 'high-performance', localClippingEnabled: true }}
+        gl={{
+          antialias: true,
+          alpha: true,
+          powerPreference: 'high-performance',
+          localClippingEnabled: true,
+        }}
         onCreated={({ gl }) => {
+          gl.localClippingEnabled = true;
           gl.toneMapping = THREE.ACESFilmicToneMapping;
           gl.toneMappingExposure = 1.15;
         }}
       >
         <color attach="background" args={['#0e1015']} />
 
-        {/* SoftShadows removido — incompatível com Three.js 0.175+ */}
-
         {/* Three-point lighting */}
-        {/* Key — warm, upper right front */}
         <directionalLight
           position={[3, 4.5, 3]}
           intensity={1.3}
@@ -101,21 +204,43 @@ export default function ProductViewer3D({
           shadow-bias={-0.0005}
           shadow-normalBias={0.02}
         />
-        {/* Fill — cool, left */}
         <directionalLight position={[-3.5, 2, 1.5]} intensity={0.45} color="#c8d8ff" />
-        {/* Rim — behind, product-colored */}
         <directionalLight position={[0, 2, -4]} intensity={0.5} color={color} />
-        {/* Ambient */}
         <ambientLight intensity={0.3} />
 
-        <Suspense fallback={<PlaceholderBottle color={color} shape={shape} scale={1} />}>
+        <Suspense
+          fallback={
+            <PlaceholderBottle
+              color={color}
+              shape={shape}
+              scale={1}
+              clippingPlanes={clippingPlanes}
+            />
+          }
+        >
           <ProductModel3D
             modelPath={product.modelPath}
             placeholderColor={color}
             placeholderShape={shape}
-            autoRotate={autoRotate}
+            autoRotate={isCutActive ? false : autoRotate}
+            clippingPlanes={clippingPlanes}
           />
         </Suspense>
+
+        {isCutActive && (
+          <ClippingPlaneHelper
+            planeY={planeY}
+            planeAngle={planeAngle}
+            onPlaneChange={onPlaneChange}
+          />
+        )}
+
+        <CutCameraController
+          confirmTrigger={confirmCutTrigger}
+          resetTrigger={resetCutTrigger}
+          planeY={planeY}
+          controlsRef={controlsRef}
+        />
 
         <Turntable color={color} />
 

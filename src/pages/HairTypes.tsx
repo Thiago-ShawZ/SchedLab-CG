@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { Link } from 'react-router-dom';
 import { Wind, Waves, Sparkles, Droplet, Sun, Flame, ArrowRight, AlertCircle, BookOpen } from 'lucide-react';
 import { HAIR_TYPES } from '@/data/hairTypes';
 import type { HairTypeInfo } from '@/data/hairTypes';
 import SourceList from '@/components/ui/SourceList';
+
+const HairHeadViewer = lazy(() => import('@/components/3d/HairHeadViewer'));
 
 const ICON_MAP: Record<HairTypeInfo['icon'], typeof Wind> = {
   wind: Wind,
@@ -77,96 +79,114 @@ export default function HairTypes() {
       {active && (
         <div className="mt-8 animate-fadeInScale">
           <div className="card p-6 sm:p-8">
-            <div className="flex items-center gap-3">
-              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-500/15 text-brand-400">
-                {(() => {
-                  const Icon = ICON_MAP[active.icon];
-                  return <Icon className="h-6 w-6" aria-hidden="true" />;
-                })()}
-              </span>
-              <h2 className="font-display text-2xl font-bold text-white">{active.name}</h2>
-            </div>
-
-            <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-              {/* Characteristics */}
-              <div>
-                <h3 className="font-display text-sm font-semibold uppercase tracking-wide text-brand-400">
-                  Características gerais
-                </h3>
-                <ul className="mt-3 space-y-2">
-                  {active.characteristics.map((c, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-ink-300">
-                      <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-brand-400" />
-                      {c}
-                    </li>
-                  ))}
-                </ul>
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
+              {/* Visualizador 3D do Manequim */}
+              <div className="h-[320px] sm:h-[380px] lg:col-span-5 lg:h-[480px]">
+                <Suspense
+                  fallback={
+                    <div className="flex h-full w-full items-center justify-center rounded-2xl border border-ink-800 bg-ink-950/60 text-sm text-ink-400">
+                      Carregando modelo 3D...
+                    </div>
+                  }
+                >
+                  <HairHeadViewer hairTypeId={active.id} />
+                </Suspense>
               </div>
 
-              {/* Care */}
-              <div>
-                <h3 className="font-display text-sm font-semibold uppercase tracking-wide text-brand-400">
-                  Cuidados gerais
-                </h3>
-                <ul className="mt-3 space-y-2">
-                  {active.care.map((c, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-ink-300">
-                      <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-brand-400" />
-                      {c}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
+              {/* Informações textuais */}
+              <div className="space-y-6 lg:col-span-7">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-500/15 text-brand-400">
+                    {(() => {
+                      const Icon = ICON_MAP[active.icon];
+                      return <Icon className="h-6 w-6" aria-hidden="true" />;
+                    })()}
+                  </span>
+                  <h2 className="font-display text-2xl font-bold text-white">{active.name}</h2>
+                </div>
 
-            {/* Related products */}
-            <div className="mt-6">
-              <h3 className="font-display text-sm font-semibold uppercase tracking-wide text-brand-400">
-                Produtos normalmente relacionados
-              </h3>
-              <p className="mt-1 text-xs text-ink-500">
-                A relação abaixo é geral. A escolha de produtos depende das características de cada
-                pessoa e das instruções do rótulo.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {active.relatedCategories.map((cat) => (
-                  <Link
-                    key={cat}
-                    to={`/catalog`}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-800/50 px-3 py-1.5 text-sm text-ink-200 transition-all hover:border-brand-500/40 hover:bg-brand-500/10 hover:text-white"
-                  >
-                    {cat}
-                    <ArrowRight className="h-3 w-3" aria-hidden="true" />
-                  </Link>
-                ))}
-              </div>
-            </div>
+                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                  {/* Characteristics */}
+                  <div>
+                    <h3 className="font-display text-sm font-semibold uppercase tracking-wide text-brand-400">
+                      Características gerais
+                    </h3>
+                    <ul className="mt-3 space-y-2">
+                      {active.characteristics.map((c, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm text-ink-300">
+                          <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-brand-400" />
+                          {c}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
 
-            {/* Tips */}
-            <div className="mt-6 rounded-lg border border-ink-700 bg-ink-800/30 p-4">
-              <h3 className="font-display text-sm font-semibold uppercase tracking-wide text-ink-300">
-                Orientações simples
-              </h3>
-              <ul className="mt-3 space-y-2">
-                {active.tips.map((t, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-ink-300">
-                    <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-ink-400" />
-                    {t}
-                  </li>
-                ))}
-              </ul>
-            </div>
+                  {/* Care */}
+                  <div>
+                    <h3 className="font-display text-sm font-semibold uppercase tracking-wide text-brand-400">
+                      Cuidados gerais
+                    </h3>
+                    <ul className="mt-3 space-y-2">
+                      {active.care.map((c, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm text-ink-300">
+                          <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-brand-400" />
+                          {c}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
 
-            {/* Sources */}
-            <div className="mt-6">
-              <div className="flex items-center gap-2 text-brand-400">
-                <BookOpen className="h-4 w-4" aria-hidden="true" />
-                <h3 className="font-display text-sm font-semibold uppercase tracking-wide">
-                  Fontes
-                </h3>
-              </div>
-              <div className="mt-3">
-                <SourceList sources={active.sources} />
+                {/* Related products */}
+                <div>
+                  <h3 className="font-display text-sm font-semibold uppercase tracking-wide text-brand-400">
+                    Produtos normalmente relacionados
+                  </h3>
+                  <p className="mt-1 text-xs text-ink-500">
+                    A relação abaixo é geral. A escolha de produtos depende das características de cada
+                    pessoa e das instruções do rótulo.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {active.relatedCategories.map((cat) => (
+                      <Link
+                        key={cat}
+                        to="/catalog"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-800/50 px-3 py-1.5 text-sm text-ink-200 transition-all hover:border-brand-500/40 hover:bg-brand-500/10 hover:text-white"
+                      >
+                        {cat}
+                        <ArrowRight className="h-3 w-3" aria-hidden="true" />
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Tips */}
+                <div className="rounded-lg border border-ink-700 bg-ink-800/30 p-4">
+                  <h3 className="font-display text-sm font-semibold uppercase tracking-wide text-ink-300">
+                    Orientações simples
+                  </h3>
+                  <ul className="mt-3 space-y-2">
+                    {active.tips.map((t, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm text-ink-300">
+                        <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-ink-400" />
+                        {t}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Sources */}
+                <div>
+                  <div className="flex items-center gap-2 text-brand-400">
+                    <BookOpen className="h-4 w-4" aria-hidden="true" />
+                    <h3 className="font-display text-sm font-semibold uppercase tracking-wide">
+                      Fontes
+                    </h3>
+                  </div>
+                  <div className="mt-3">
+                    <SourceList sources={active.sources} />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
