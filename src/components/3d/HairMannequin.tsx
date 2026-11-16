@@ -175,43 +175,88 @@ function ProceduralHair({ type }: { type: string }) {
   );
 }
 
-// Componente para tentar carregar GLB customizado de /models/hair/hair-{id}.glb
-function CustomHairGLB({ path, fallback }: { path: string; fallback: React.ReactNode }) {
-  const [failed, setFailed] = useState(false);
+// Componente interno que carrega o GLB via useGLTF (compatível com Suspense)
+function HairGLBScene({ type }: { type: string }) {
+  const path = `/models/hair/hair-${type}.glb`;
+  const { scene } = useGLTF(path);
 
-  // Tenta pré-carregar; se falhar cai no fallback procedural
-  useEffect(() => {
-    fetch(path, { method: 'HEAD' })
-      .then((res) => {
-        if (!res.ok) setFailed(true);
-      })
-      .catch(() => setFailed(true));
-  }, [path]);
+  const { clone, sf, posX, posY, posZ } = useMemo(() => {
+    const c = scene.clone(true);
+    c.updateMatrixWorld(true);
 
-  if (failed) return <>{fallback}</>;
+    // Oculta câmeras, luzes e planos de estúdio que vêm em rigs de personagem
+    c.traverse((child) => {
+      if ((child as any).isCamera || (child as any).isLight) { child.visible = false; return; }
+      if (/stage|floor|ground|backdrop|studio|shadow_plane/i.test(child.name)) { child.visible = false; return; }
+    });
+
+    // BBox apenas de malhas visíveis (espaço mundial com transforms aplicados)
+    const box = new THREE.Box3();
+    let valid = false;
+    c.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh && child.visible) {
+        const m = child as THREE.Mesh;
+        if (m.geometry) {
+          m.geometry.computeBoundingBox();
+          if (m.geometry.boundingBox) {
+            box.union(m.geometry.boundingBox.clone().applyMatrix4(m.matrixWorld));
+            valid = true;
+          }
+        }
+      }
+    });
+    if (!valid) box.setFromObject(c);
+
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+
+    // Escala para ~1.8 unidades de altura (encaixa sobre a cabeça do manequim)
+    const TARGET_HEIGHT = 1.8;
+    const maxDim = Math.max(size.x, size.y, size.z);
+    let scaleFactor = maxDim > 0.001 ? TARGET_HEIGHT / maxDim : 1;
+    if (!isFinite(scaleFactor) || scaleFactor <= 0 || scaleFactor > 1000) {
+      console.warn(`[HairMannequin] Escala inválida para hair-${type}.glb, usando 1`);
+      scaleFactor = 1;
+    }
+
+    // Posição em espaço pré-escala: centraliza X/Z, apoia base levemente acima da coroa da cabeça
+    return {
+      clone: c,
+      sf: scaleFactor,
+      posX: -center.x,
+      posY: -box.min.y + 0.3 / scaleFactor,
+      posZ: -center.z,
+    };
+  }, [scene, type]);
 
   return (
-    <React.Suspense fallback={fallback}>
-      <LoadedGLB path={path} onError={() => setFailed(true)} fallback={fallback} />
-    </React.Suspense>
+    <group position={[posX, posY, posZ]} scale={sf}>
+      <primitive object={clone} />
+    </group>
   );
 }
 
-function LoadedGLB({
-  path,
-  onError,
-  fallback,
-}: {
-  path: string;
-  onError: () => void;
-  fallback: React.ReactNode;
-}) {
-  try {
-    const { scene } = useGLTF(path);
-    return <primitive object={scene.clone(true)} />;
-  } catch {
-    onError();
-    return <>{fallback}</>;
+// ErrorBoundary para capturar falha de carregamento do GLB e cair no fallback procedural
+class HairGLBErrorBoundary extends React.Component<
+  { children: React.ReactNode; type: string; onError: () => void },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode; type: string; onError: () => void }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error: any) {
+    console.error(`[HairMannequin] Falha ao carregar hair-${this.props.type}.glb:`, error);
+    this.props.onError();
+  }
+  render() {
+    if (this.state.hasError) return null;
+    return this.props.children;
   }
 }
 
@@ -219,6 +264,7 @@ export default function HairMannequin({ hairTypeId }: HairMannequinProps) {
   const rootRef = useRef<THREE.Group>(null);
   const currentScale = useRef(0.9);
   const targetScale = 1;
+  const [glbFailed, setGlbFailed] = useState(false);
 
   // Animação de idle (leve respiração senoidal) e transição de escala
   useFrame(({ clock }, delta) => {
@@ -237,18 +283,33 @@ export default function HairMannequin({ hairTypeId }: HairMannequinProps) {
     rootRef.current.scale.setScalar(currentScale.current);
   });
 
-  // Dispara pulso de transição ao trocar o hairTypeId
+  // Dispara pulso de transição e reseta falha ao trocar o hairTypeId
   useEffect(() => {
     currentScale.current = 0.94;
+    setGlbFailed(false);
   }, [hairTypeId]);
 
   const type = hairTypeId || 'liso';
-  const customGLBPath = `/models/hair/hair-${type}.glb`;
 
   return (
     <group ref={rootRef}>
       <BaseHead />
-      <CustomHairGLB path={customGLBPath} fallback={<ProceduralHair type={type} />} />
+      {glbFailed ? (
+        <ProceduralHair type={type} />
+      ) : (
+        <React.Suspense fallback={<ProceduralHair type={type} />}>
+          <HairGLBErrorBoundary type={type} onError={() => setGlbFailed(true)}>
+            <HairGLBScene type={type} />
+          </HairGLBErrorBoundary>
+        </React.Suspense>
+      )}
     </group>
   );
 }
+
+// Pré-carrega apenas os arquivos leves (< 3 MB) para não bloquear a primeira renderização
+useGLTF.preload('/models/hair/hair-liso.glb');
+useGLTF.preload('/models/hair/hair-ondulado.glb');
+useGLTF.preload('/models/hair/hair-cacheado.glb');
+useGLTF.preload('/models/hair/hair-oleoso.glb');
+// hair-crespo.glb (~13 MB) e hair-seco.glb (~13.8 MB) NÃO são pré-carregados — só sob demanda

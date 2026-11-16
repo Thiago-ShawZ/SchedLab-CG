@@ -169,17 +169,23 @@ function GLBModel({
     const targetSize = 2.1;
     const sf = maxDim > 0 ? targetSize / maxDim : 1;
 
-    // A turntable (mesa giratória) fica em Y = -1.25, com topo da plataforma em Y = -1.21.
-    // Apoia a base do modelo perfeitamente na mesa:
+    /*
+     * CG — Reposicionamento do pivô em espaço pré-escala:
+     * O grupo interno recebe scale=sf; portanto o offset deve ser em coordenadas do modelo
+     * (pré-escala) para que a transformação final resulte nas coordenadas mundiais corretas:
+     *   mundo_X = (offset_X + center.x) * sf = 0  →  offset_X = -center.x
+     *   mundo_Y_base = (offset_Y + box.min.y) * sf = TURNTABLE_Y
+     *                  →  offset_Y = TURNTABLE_Y / sf - box.min.y
+     */
     const TURNTABLE_SURFACE_Y = -1.21;
-    const offsetY = TURNTABLE_SURFACE_Y - box.min.y * sf;
+    const offsetY = TURNTABLE_SURFACE_Y / sf - box.min.y;
 
     return {
       scaleFactor: sf,
       centeredOffset: [
-        -center.x * sf,
+        -center.x,
         offsetY,
-        -center.z * sf,
+        -center.z,
       ] as [number, number, number],
     };
   }, [cloned]);
@@ -205,9 +211,17 @@ function GLBModel({
     ref.current.rotation.y += delta * rotationVelocity.current;
   });
 
+  /*
+   * CG: O grupo de spin (ref) fica na origem (0,0,0) — a rotação .y gira em torno do eixo
+   * mundial Y, sem deslocamento. O grupo interno aplica escala e reposicionamento do pivô
+   * do modelo, garantindo que modelos Sketchfab com centro fora da origem (ex: mask.glb,
+   * creme.glb) girem corretamente sem "voar" para fora da tela.
+   */
   return (
-    <group ref={ref} scale={scaleFactor} position={centeredOffset}>
-      <primitive object={cloned} />
+    <group ref={ref}>
+      <group scale={scaleFactor} position={centeredOffset}>
+        <primitive object={cloned} />
+      </group>
     </group>
   );
 }

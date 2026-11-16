@@ -45,18 +45,19 @@ const SHELF_CLIP_PLANES = [
 ];
 
 class ErrorBoundary extends React.Component<
-  { children: React.ReactNode; onError: () => void },
+  { children: React.ReactNode; onError: (error?: any) => void; modelPath?: string },
   { hasError: boolean }
 > {
-  constructor(props: { children: React.ReactNode; onError: () => void }) {
+  constructor(props: { children: React.ReactNode; onError: (error?: any) => void; modelPath?: string }) {
     super(props);
     this.state = { hasError: false };
   }
   static getDerivedStateFromError() {
     return { hasError: true };
   }
-  componentDidCatch() {
-    this.props.onError();
+  componentDidCatch(error: any) {
+    console.error(`[HairShelf3D] Falha ao carregar modelo 3D (${this.props.modelPath ?? 'desconhecido'}):`, error);
+    this.props.onError(error);
   }
   render() {
     if (this.state.hasError) return null;
@@ -74,7 +75,7 @@ function ShelfGLBModel({
   selected: boolean;
 }) {
   const { scene } = useGLTF(modelPath);
-  const cloned = useRef<THREE.Group>(scene.clone(true)).current;
+  const cloned = useMemo(() => scene.clone(true), [scene]);
 
   const { scaleFactor, position, meshes } = useMemo(() => {
     cloned.updateMatrixWorld(true);
@@ -84,7 +85,7 @@ function ShelfGLBModel({
     const meshList: THREE.Mesh[] = [];
 
     cloned.traverse((child) => {
-      // Ignora câmeras, luzes e elementos de estúdio
+      // Ignora câmeras, luzes e elementos de estúdio/chão
       if ((child as any).isCamera || (child as any).isLight) {
         child.visible = false;
         return;
@@ -99,43 +100,29 @@ function ShelfGLBModel({
         mesh.castShadow = true;
         mesh.receiveShadow = true;
 
-        const processMaterial = (original: THREE.Material): THREE.Material => {
-          /* 
-           * PBR (Physically Based Rendering):
-           * Converte e aprimora materiais dos modelos para MeshPhysicalMaterial.
-           * Aplica clearcoat (verniz), baixa rugosidade e baixo metalness para plástico cosmético.
-           */
-          const physicalMat = new THREE.MeshPhysicalMaterial();
-
-          if (original instanceof THREE.MeshStandardMaterial) {
-            physicalMat.copy(original);
-          } else {
-            if ('color' in original && (original as any).color) {
-              physicalMat.color.copy((original as any).color);
-            }
-            if ('map' in original && (original as any).map) {
-              physicalMat.map = (original as any).map;
-            }
+        const enhanceMaterial = (original: THREE.Material): THREE.Material => {
+          // Clona material original preservando mapas de textura e UVs com segurança
+          const m = original.clone();
+          if ('roughness' in m && typeof (m as any).roughness === 'number') {
+            (m as any).roughness = THREE.MathUtils.clamp((m as any).roughness || 0.28, 0.18, 0.42);
           }
-
-          physicalMat.roughness = THREE.MathUtils.clamp(
-            physicalMat.roughness > 0 ? physicalMat.roughness : 0.28,
-            0.18,
-            0.4
-          );
-          physicalMat.metalness = Math.min(physicalMat.metalness, 0.15);
-          physicalMat.clearcoat = 0.8;
-          physicalMat.clearcoatRoughness = 0.15;
-          physicalMat.envMapIntensity = 1.1;
-
-          return physicalMat;
+          if ('metalness' in m && typeof (m as any).metalness === 'number') {
+            (m as any).metalness = Math.min((m as any).metalness || 0.05, 0.15);
+          }
+          if ('clearcoat' in m && typeof (m as any).clearcoat === 'number') {
+            (m as any).clearcoat = 0.8;
+            (m as any).clearcoatRoughness = 0.15;
+          }
+          if ('envMapIntensity' in m && typeof (m as any).envMapIntensity === 'number') {
+            (m as any).envMapIntensity = 1.1;
+          }
+          return m;
         };
 
-        // Clone material to avoid mutating shared materials from the GLTF cache
         if (Array.isArray(mesh.material)) {
-          mesh.material = mesh.material.map(processMaterial);
+          mesh.material = mesh.material.map(enhanceMaterial);
         } else if (mesh.material) {
-          mesh.material = processMaterial(mesh.material);
+          mesh.material = enhanceMaterial(mesh.material);
         }
         meshList.push(mesh);
 
@@ -143,12 +130,8 @@ function ShelfGLBModel({
           mesh.geometry.computeBoundingBox();
           if (mesh.geometry.boundingBox) {
             const meshBox = mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld);
-            const meshSize = new THREE.Vector3();
-            meshBox.getSize(meshSize);
-            if (meshSize.x < 35 && meshSize.y < 35 && meshSize.z < 35) {
-              box.union(meshBox);
-              hasValidMesh = true;
-            }
+            box.union(meshBox);
+            hasValidMesh = true;
           }
         }
       }
@@ -164,7 +147,11 @@ function ShelfGLBModel({
     box.getCenter(center);
 
     const maxDim = Math.max(size.x, size.y, size.z);
-    const sf = maxDim > 0 ? SHELF_MODEL_TARGET / maxDim : 1;
+    let sf = maxDim > 0 ? SHELF_MODEL_TARGET / maxDim : 1;
+    if (isNaN(sf) || sf <= 0 || !isFinite(sf)) {
+      console.warn(`[HairShelf3D] Escala inválida (${sf}) para ${modelPath}, aplicando escala 1`);
+      sf = 1;
+    }
     const posY = SHELF_SURFACE_Y - box.min.y * sf;
 
     return {
@@ -172,7 +159,7 @@ function ShelfGLBModel({
       position: [-center.x * sf, posY, -center.z * sf] as [number, number, number],
       meshes: meshList,
     };
-  }, [cloned]);
+  }, [cloned, modelPath]);
 
   const emissiveIntensity = useRef(0);
 
