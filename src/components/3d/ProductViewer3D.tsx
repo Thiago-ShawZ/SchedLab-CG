@@ -256,6 +256,7 @@ export default function ProductViewer3D({
 
         <OrbitControls
           ref={controlsRef}
+          target={[0, -0.15, 0]}
           enablePan={false}
           minDistance={2.5}
           maxDistance={7}

@@ -76,8 +76,9 @@ function ShelfGLBModel({
 }) {
   const { scene } = useGLTF(modelPath);
   const cloned = useMemo(() => scene.clone(true), [scene]);
+  const spinRef = useRef<THREE.Group>(null);
 
-  const { scaleFactor, position, meshes } = useMemo(() => {
+  const { scaleFactor, center, boxMinY, meshes } = useMemo(() => {
     cloned.updateMatrixWorld(true);
 
     const box = new THREE.Box3();
@@ -130,8 +131,12 @@ function ShelfGLBModel({
           mesh.geometry.computeBoundingBox();
           if (mesh.geometry.boundingBox) {
             const meshBox = mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld);
-            box.union(meshBox);
-            hasValidMesh = true;
+            const meshSize = new THREE.Vector3();
+            meshBox.getSize(meshSize);
+            if (meshSize.x < 35 && meshSize.y < 35 && meshSize.z < 35) {
+              box.union(meshBox);
+              hasValidMesh = true;
+            }
           }
         }
       }
@@ -143,8 +148,8 @@ function ShelfGLBModel({
 
     const size = new THREE.Vector3();
     box.getSize(size);
-    const center = new THREE.Vector3();
-    box.getCenter(center);
+    const c = new THREE.Vector3();
+    box.getCenter(c);
 
     const maxDim = Math.max(size.x, size.y, size.z);
     let sf = maxDim > 0 ? SHELF_MODEL_TARGET / maxDim : 1;
@@ -152,11 +157,11 @@ function ShelfGLBModel({
       console.warn(`[HairShelf3D] Escala inválida (${sf}) para ${modelPath}, aplicando escala 1`);
       sf = 1;
     }
-    const posY = SHELF_SURFACE_Y - box.min.y * sf;
 
     return {
       scaleFactor: sf,
-      position: [-center.x * sf, posY, -center.z * sf] as [number, number, number],
+      center: c,
+      boxMinY: box.min.y,
       meshes: meshList,
     };
   }, [cloned, modelPath]);
@@ -165,25 +170,33 @@ function ShelfGLBModel({
 
   useFrame((_, delta) => {
     const target = selected ? 0.3 : hovered ? 0.15 : 0;
-    if (Math.abs(emissiveIntensity.current - target) < 0.005) return;
-    emissiveIntensity.current = THREE.MathUtils.lerp(
-      emissiveIntensity.current,
-      target,
-      1 - Math.exp(-delta * 8),
-    );
-    const color = selected ? EMISSIVE_SELECTED : EMISSIVE_HOVER;
-    for (const mesh of meshes) {
-      const mat = mesh.material as THREE.MeshStandardMaterial;
-      if (mat && mat.emissive) {
-        mat.emissive.copy(color);
-        mat.emissiveIntensity = emissiveIntensity.current;
+    if (Math.abs(emissiveIntensity.current - target) > 0.005) {
+      emissiveIntensity.current = THREE.MathUtils.lerp(
+        emissiveIntensity.current,
+        target,
+        1 - Math.exp(-delta * 8),
+      );
+      const color = selected ? EMISSIVE_SELECTED : EMISSIVE_HOVER;
+      for (const mesh of meshes) {
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        if (mat && mat.emissive) {
+          mat.emissive.copy(color);
+          mat.emissiveIntensity = emissiveIntensity.current;
+        }
       }
+    }
+
+    // Suave rotação no centro visual ao interagir (hover ou selected)
+    if (spinRef.current && (hovered || selected)) {
+      spinRef.current.rotation.y += delta * 1.2;
     }
   });
 
   return (
-    <group scale={scaleFactor} position={position}>
-      <primitive object={cloned} />
+    <group ref={spinRef}>
+      <group position={[0, SHELF_SURFACE_Y, 0]} scale={scaleFactor}>
+        <primitive object={cloned} position={[-center.x, -boxMinY, -center.z]} />
+      </group>
     </group>
   );
 }

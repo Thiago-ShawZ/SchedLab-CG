@@ -62,6 +62,7 @@ export default function HairHeadViewer({ hairTypeId }: HairHeadViewerProps) {
         <Environment preset="studio" />
 
         <OrbitControls
+          target={[0, 0.25, 0]}
           enablePan={false}
           minDistance={2.2}
           maxDistance={4.5}

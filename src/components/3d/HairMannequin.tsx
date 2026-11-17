@@ -180,61 +180,115 @@ function HairGLBScene({ type }: { type: string }) {
   const path = `/models/hair/hair-${type}.glb`;
   const { scene } = useGLTF(path);
 
-  const { clone, sf, posX, posY, posZ } = useMemo(() => {
+  const { clone, sf, targetY, offsetY, center, hasHead } = useMemo(() => {
     const c = scene.clone(true);
     c.updateMatrixWorld(true);
 
     // Oculta câmeras, luzes e planos de estúdio que vêm em rigs de personagem
     c.traverse((child) => {
-      if ((child as any).isCamera || (child as any).isLight) { child.visible = false; return; }
-      if (/stage|floor|ground|backdrop|studio|shadow_plane/i.test(child.name)) { child.visible = false; return; }
+      if ((child as any).isCamera || (child as any).isLight) {
+        child.visible = false;
+        return;
+      }
+      if (/stage|floor|ground|backdrop|studio|shadow_plane/i.test(child.name)) {
+        child.visible = false;
+        return;
+      }
     });
 
-    // BBox apenas de malhas visíveis (espaço mundial com transforms aplicados)
-    const box = new THREE.Box3();
-    let valid = false;
+    // Detecta se o modelo já inclui cabeça/busto
+    let headDetected = false;
     c.traverse((child) => {
       if ((child as THREE.Mesh).isMesh && child.visible) {
-        const m = child as THREE.Mesh;
-        if (m.geometry) {
-          m.geometry.computeBoundingBox();
-          if (m.geometry.boundingBox) {
-            box.union(m.geometry.boundingBox.clone().applyMatrix4(m.matrixWorld));
-            valid = true;
+        const mesh = child as THREE.Mesh;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        if (mesh.material) {
+          if (Array.isArray(mesh.material)) {
+            mesh.material.forEach((m) => {
+              if (m) m.side = THREE.DoubleSide;
+            });
+          } else {
+            mesh.material.side = THREE.DoubleSide;
+          }
+        }
+        const mat = mesh.material;
+        const matName = Array.isArray(mat)
+          ? mat.map((m) => m?.name || '').join(' ')
+          : mat?.name || '';
+        const meshName = mesh.name || '';
+        const isHeadMat =
+          /head|face|skin|body|corpo|bust|sclup|sculpt/i.test(matName) &&
+          !/hair/i.test(matName);
+        const isHeadMesh =
+          /head|face|skin|body|corpo|bust|sclup|sculpt/i.test(meshName) &&
+          !/hair/i.test(meshName);
+        if (isHeadMat || isHeadMesh) {
+          headDetected = true;
+        }
+
+        // Se o modelo é crespo/seco e não tiver mapa de textura (KHR_materials_pbrSpecularGlossiness legado),
+        // aplica acabamento PBR coerente para o busto e os fios
+        if (!Array.isArray(mat) && mat && !(mat as any).map) {
+          if (/sclup|sculpt/i.test(matName) || /sclup|sculpt/i.test(meshName)) {
+            (mat as THREE.MeshStandardMaterial).color = new THREE.Color('#2a2e39');
+            (mat as THREE.MeshStandardMaterial).roughness = 0.55;
+          } else if (/GoZMesh/i.test(matName)) {
+            (mat as THREE.MeshStandardMaterial).color = new THREE.Color(
+              type === 'seco' ? '#2b211a' : '#181412'
+            );
+            (mat as THREE.MeshStandardMaterial).roughness = 0.65;
           }
         }
       }
     });
-    if (!valid) box.setFromObject(c);
 
+    const box = new THREE.Box3().setFromObject(c);
     const size = new THREE.Vector3();
     box.getSize(size);
-    const center = new THREE.Vector3();
-    box.getCenter(center);
+    const cntr = new THREE.Vector3();
+    box.getCenter(cntr);
 
-    // Escala para ~1.8 unidades de altura (encaixa sobre a cabeça do manequim)
-    const TARGET_HEIGHT = 1.8;
-    const maxDim = Math.max(size.x, size.y, size.z);
-    let scaleFactor = maxDim > 0.001 ? TARGET_HEIGHT / maxDim : 1;
-    if (!isFinite(scaleFactor) || scaleFactor <= 0 || scaleFactor > 1000) {
-      console.warn(`[HairMannequin] Escala inválida para hair-${type}.glb, usando 1`);
-      scaleFactor = 1;
+    let scaleFactor = 1;
+    let tY = 0;
+    let offY = 0;
+
+    if (headDetected) {
+      // O modelo já inclui cabeça e busto completos (ex: crespo, seco)
+      // Normaliza altura total para ~2.45 e apoia a base em Y = -1.05 (alinhando com o manequim)
+      const TARGET_BUST_HEIGHT = 2.45;
+      scaleFactor = size.y > 0 ? TARGET_BUST_HEIGHT / size.y : 1;
+      tY = -1.05;
+      offY = -box.min.y;
+    } else {
+      // O modelo traz apenas o cabelo (ex: liso, ondulado, cacheado, oleoso)
+      // Normaliza para encaixar sobre a cabeça do manequim (topo da cabeça Y ~1.40, largura ~1.5)
+      const horizontalDim = Math.max(size.x, size.z);
+      const TARGET_WIDTH = type === 'cacheado' ? 2.1 : 1.85;
+      scaleFactor = horizontalDim > 0 ? TARGET_WIDTH / horizontalDim : 1;
+      tY = 1.44;
+      offY = -box.max.y;
     }
 
-    // Posição em espaço pré-escala: centraliza X/Z, apoia base levemente acima da coroa da cabeça
+    if (!isFinite(scaleFactor) || scaleFactor <= 0) scaleFactor = 1;
+
     return {
       clone: c,
       sf: scaleFactor,
-      posX: -center.x,
-      posY: -box.min.y + 0.3 / scaleFactor,
-      posZ: -center.z,
+      targetY: tY,
+      offsetY: offY,
+      center: cntr,
+      hasHead: headDetected,
     };
   }, [scene, type]);
 
   return (
-    <group position={[posX, posY, posZ]} scale={sf}>
-      <primitive object={clone} />
-    </group>
+    <>
+      {!hasHead && <BaseHead />}
+      <group position={[0, targetY, 0]} scale={sf}>
+        <primitive object={clone} position={[-center.x, offsetY, -center.z]} />
+      </group>
+    </>
   );
 }
 
@@ -293,12 +347,21 @@ export default function HairMannequin({ hairTypeId }: HairMannequinProps) {
 
   return (
     <group ref={rootRef}>
-      <BaseHead />
       {glbFailed ? (
-        <ProceduralHair type={type} />
+        <>
+          <BaseHead />
+          <ProceduralHair type={type} />
+        </>
       ) : (
-        <React.Suspense fallback={<ProceduralHair type={type} />}>
-          <HairGLBErrorBoundary type={type} onError={() => setGlbFailed(true)}>
+        <React.Suspense
+          fallback={
+            <>
+              <BaseHead />
+              <ProceduralHair type={type} />
+            </>
+          }
+        >
+          <HairGLBErrorBoundary key={type} type={type} onError={() => setGlbFailed(true)}>
             <HairGLBScene type={type} />
           </HairGLBErrorBoundary>
         </React.Suspense>

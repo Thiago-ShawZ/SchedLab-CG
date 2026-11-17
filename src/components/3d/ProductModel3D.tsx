@@ -126,11 +126,13 @@ function GLBModel({
   /*
    * Auto-framing e Recentralização Robusta:
    * 1. Calcula o Bounding Box real apenas das malhas visíveis do produto (ignora estúdios/luzes).
-   * 2. Centraliza os eixos X e Z na origem (corrige modelos com pivôs deslocados).
+   * 2. Centraliza os eixos X e Z na origem (corrige modelos com pivôs deslocados como mask.glb e creme.glb).
    * 3. Apoia a base do produto (box.min.y) exatamente sobre a plataforma giratória (Y = -1.21).
    * 4. Ajusta a escala para enquadramento ideal no campo de visão da câmera (targetSize = 2.1).
    */
-  const { scaleFactor, centeredOffset } = useMemo(() => {
+  const TURNTABLE_SURFACE_Y = -1.21;
+
+  const { scaleFactor, center, boxMinY } = useMemo(() => {
     cloned.updateMatrixWorld(true);
 
     const box = new THREE.Box3();
@@ -162,31 +164,18 @@ function GLBModel({
 
     const size = new THREE.Vector3();
     box.getSize(size);
-    const center = new THREE.Vector3();
-    box.getCenter(center);
+    const c = new THREE.Vector3();
+    box.getCenter(c);
 
     const maxDim = Math.max(size.x, size.y, size.z);
     const targetSize = 2.1;
-    const sf = maxDim > 0 ? targetSize / maxDim : 1;
-
-    /*
-     * CG — Reposicionamento do pivô em espaço pré-escala:
-     * O grupo interno recebe scale=sf; portanto o offset deve ser em coordenadas do modelo
-     * (pré-escala) para que a transformação final resulte nas coordenadas mundiais corretas:
-     *   mundo_X = (offset_X + center.x) * sf = 0  →  offset_X = -center.x
-     *   mundo_Y_base = (offset_Y + box.min.y) * sf = TURNTABLE_Y
-     *                  →  offset_Y = TURNTABLE_Y / sf - box.min.y
-     */
-    const TURNTABLE_SURFACE_Y = -1.21;
-    const offsetY = TURNTABLE_SURFACE_Y / sf - box.min.y;
+    let sf = maxDim > 0 ? targetSize / maxDim : 1;
+    if (!isFinite(sf) || sf <= 0) sf = 1;
 
     return {
       scaleFactor: sf,
-      centeredOffset: [
-        -center.x,
-        offsetY,
-        -center.z,
-      ] as [number, number, number],
+      center: c,
+      boxMinY: box.min.y,
     };
   }, [cloned]);
 
@@ -212,15 +201,18 @@ function GLBModel({
   });
 
   /*
-   * CG: O grupo de spin (ref) fica na origem (0,0,0) — a rotação .y gira em torno do eixo
-   * mundial Y, sem deslocamento. O grupo interno aplica escala e reposicionamento do pivô
-   * do modelo, garantindo que modelos Sketchfab com centro fora da origem (ex: mask.glb,
-   * creme.glb) girem corretamente sem "voar" para fora da tela.
+   * CG — Hierarquia de Transformação e Rotação no Centro Visual:
+   * 1. ref: Grupo de rotação em Y posicionado na origem (0,0,0) — gira em torno do eixo central Y.
+   * 2. Grupo intermediário: escala sf e elevação para o topo da plataforma ([0, TURNTABLE_SURFACE_Y, 0]).
+   * 3. primitive (cloned): transladado por [-center.x, -boxMinY, -center.z], zerando o centro em X/Z
+   *    e colocando a base do produto em Y = 0 dentro do grupo escalado.
+   * Desta forma, modelos com pivô excêntrico (ex: mask.glb, creme.glb) giram perfeitamente no seu
+   * centro geométrico sem orbitar nem sair do enquadramento.
    */
   return (
     <group ref={ref}>
-      <group scale={scaleFactor} position={centeredOffset}>
-        <primitive object={cloned} />
+      <group position={[0, TURNTABLE_SURFACE_Y, 0]} scale={scaleFactor}>
+        <primitive object={cloned} position={[-center.x, -boxMinY, -center.z]} />
       </group>
     </group>
   );
