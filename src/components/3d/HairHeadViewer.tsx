@@ -23,7 +23,7 @@ export default function HairHeadViewer({ hairTypeId }: HairHeadViewerProps) {
       <Canvas
         shadows={{ type: THREE.PCFShadowMap }}
         dpr={[1, 1.5]}
-        camera={{ position: [0, 0.4, 3.2], fov: 38 }}
+        camera={{ position: [0, 0.32, 3.4], fov: 40 }}
         gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
@@ -51,7 +51,7 @@ export default function HairHeadViewer({ hairTypeId }: HairHeadViewerProps) {
         </Suspense>
 
         <ContactShadows
-          position={[0, -1.05, 0]}
+          position={[0, -1.25, 0]}
           opacity={0.45}
           scale={3.5}
           blur={2.2}
