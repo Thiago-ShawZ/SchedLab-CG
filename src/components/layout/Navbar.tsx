@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink, Link } from 'react-router-dom';
-import { FlaskConical, Menu, X } from 'lucide-react';
+import { FlaskConical, Menu, X, Calendar, ExternalLink } from 'lucide-react';
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
@@ -41,6 +41,17 @@ export default function Navbar() {
           <NavLink to="/about" className={linkClass}>
             Sobre
           </NavLink>
+          <a
+            href="https://schediaagendamentostcc.vercel.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-schedia-500/30 bg-schedia-500/10 px-3 py-1.5 text-sm font-medium text-schedia-400 transition-all hover:border-schedia-500/60 hover:bg-schedia-500/20 hover:text-schedia-300 active:scale-95"
+            aria-label="Abrir Schedia — plataforma de agendamentos (abre em nova aba)"
+          >
+            <Calendar className="h-4 w-4" aria-hidden="true" />
+            <span>Schedia</span>
+            <ExternalLink className="h-3 w-3 opacity-70" aria-hidden="true" />
+          </a>
         </div>
 
         {/* Mobile toggle */}
@@ -70,6 +81,20 @@ export default function Navbar() {
             <NavLink to="/about" className={mobileLinkClass} onClick={() => setOpen(false)}>
               Sobre
             </NavLink>
+            <a
+              href="https://schediaagendamentostcc.vercel.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setOpen(false)}
+              className="mt-1 flex items-center justify-between rounded-lg border border-schedia-500/30 bg-schedia-500/10 px-4 py-2.5 text-sm font-medium text-schedia-400 transition-colors hover:bg-schedia-500/20 hover:text-white"
+              aria-label="Abrir Schedia — plataforma de agendamentos (abre em nova aba)"
+            >
+              <span className="flex items-center gap-2">
+                <Calendar className="h-4 w-4" aria-hidden="true" />
+                Schedia
+              </span>
+              <ExternalLink className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
+            </a>
           </div>
         </div>
       )}

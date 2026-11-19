@@ -43,6 +43,11 @@ export default {
           600: '#ea580c',
           700: '#c2410c',
         },
+        schedia: {
+          400: '#a78bfa',
+          500: '#7c3aed',
+          600: '#6d28d9',
+        },
       },
       keyframes: {
         fadeIn: {

@@ -1,5 +1,5 @@
 import { useNavigate, Link } from 'react-router-dom';
-import { ArrowRight, MousePointerClick, Sparkles } from 'lucide-react';
+import { ArrowRight, MousePointerClick, Sparkles, Calendar, ExternalLink } from 'lucide-react';
 import { Suspense, lazy } from 'react';
 import { PRODUCTS } from '@/data/products';
 import type { Product } from '@/types/product';
@@ -50,6 +50,17 @@ export default function Home() {
               >
                 Sobre o projeto
               </button>
+              <a
+                href="https://schediaagendamentostcc.vercel.app"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg border border-schedia-500/40 text-schedia-400 font-medium transition-all duration-200 hover:border-schedia-500 hover:bg-schedia-500/15 hover:text-schedia-300 active:scale-95"
+                aria-label="Agendar no Schedia (abre em nova aba)"
+              >
+                <Calendar className="h-4 w-4" aria-hidden="true" />
+                Agendar no Schedia
+                <ExternalLink className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
+              </a>
             </div>
 
             <div className="mt-8 flex items-center gap-2 text-xs text-ink-400">

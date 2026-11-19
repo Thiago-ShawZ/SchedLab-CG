@@ -1,4 +1,4 @@
-import { Boxes, Cpu, Layers, Lightbulb, MousePointerClick, BookOpen, AlertCircle } from 'lucide-react';
+import { Boxes, Cpu, Layers, Lightbulb, MousePointerClick, BookOpen, AlertCircle, Calendar, ExternalLink } from 'lucide-react';
 import { GENERAL_SOURCES } from '@/data/products';
 import SourceList from '@/components/ui/SourceList';
 
@@ -32,6 +32,40 @@ export default function About() {
           experiência interativa. O objetivo é demonstrar conceitos de modelagem, iluminação,
           materiais e interação em um contexto educativo.
         </p>
+
+        {/* Integração com Ecossistema Schedia */}
+        <section className="mt-6 rounded-xl border border-schedia-500/30 bg-schedia-500/5 p-5">
+          <div className="flex items-center gap-2 text-schedia-400">
+            <Calendar className="h-5 w-5" aria-hidden="true" />
+            <h2 className="font-display text-base font-semibold">Ecossistema Schedia</h2>
+          </div>
+          <p className="mt-2 text-sm leading-relaxed text-ink-300">
+            O SchedLab atua como o laboratório visual e educativo em 3D, enquanto o{' '}
+            <a
+              href="https://schediaagendamentostcc.vercel.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-schedia-400 underline decoration-schedia-500/50 underline-offset-2 transition-colors hover:text-schedia-300"
+            >
+              Schedia
+            </a>{' '}
+            é a plataforma web de agendamentos para negócios de beleza. Os projetos se complementam:
+            o SchedLab aprofunda o conhecimento sobre cuidados capilares e formatos de cosméticos com
+            computação gráfica em tempo real, enquanto o Schedia conecta clientes e profissionais para
+            a realização prática dos serviços.
+          </p>
+          <div className="mt-3.5">
+            <a
+              href="https://schediaagendamentostcc.vercel.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-schedia-500/40 bg-schedia-500/10 px-3 py-1.5 text-xs font-medium text-schedia-400 transition-all hover:border-schedia-500/70 hover:bg-schedia-500/20 hover:text-schedia-300 active:scale-95"
+            >
+              <span>Acessar plataforma Schedia</span>
+              <ExternalLink className="h-3 w-3 opacity-70" aria-hidden="true" />
+            </a>
+          </div>
+        </section>
 
         {/* Tech stack */}
         <section className="mt-10">
