@@ -1,10 +1,10 @@
 // src/components/3d/Hair.tsx
 // Cabelo procedural para React Three Fiber (sem GLB).
-// Técnica: fios-guia -> mechas (clumping) -> curvatura em hélice -> tubo afunilado,
-// tudo fundido em UMA BufferGeometry (1 draw call por tipo de cabelo).
-//
-// Convenções: origem = centro da cabeça, rosto olhando para +Z, Y para cima.
-// As medidas dos presets são relativas ao raio vertical da cabeça (radii[1]).
+// Técnica:
+// 1. Couro cabeludo estruturado e contínuo (scalp base): fecha 100% o topo da cabeça,
+//    eliminando o efeito de "casca de ovo" ou manequim exposto.
+// 2. Fios-guia anatômicos -> mechas com aglutinação (clumping) nas raízes -> tubos afunilados.
+// 3. 1 BufferGeometry fundida por tipo com cache estático (alta performance).
 
 import { useMemo } from 'react';
 import * as THREE from 'three';
@@ -21,73 +21,173 @@ export const HAIR_TYPE_IDS: HairType[] = [
 ];
 
 interface HairPreset {
-  color: string; // cor base do fio (a raiz sai mais escura, a ponta mais clara)
+  color: string; // cor base (raiz sai mais escura, ponta com brilho suave)
   roughness: number;
-  guides: number; // quantidade de mechas
+  clearcoat?: number;
+  clearcoatRoughness?: number;
+  guides: number; // quantidade de mechas principais
   children: number; // fios por mecha
   length: number; // comprimento do fio esticado
-  samples: number; // pontos por fio (mais = mais suave e mais pesado)
-  gravity: number; // quanto a gravidade puxa o fio ao longo do comprimento
-  initialDrop: number; // 0 = sai perpendicular ao couro cabeludo, 1 = cai direto
-  noise: number; // irregularidade da direção
-  curlRadius: number; // raio da onda/cacho
-  curlTurns: number; // voltas completas ao longo do fio
-  helix: number; // 0 = onda plana (ondulado), 1 = hélice (cacho)
-  phaseJitter: number; // variação de fase entre fios da mesma mecha
-  spread: number; // raio da mecha na raiz
-  clump: number; // 1 = fios soltos na ponta, <1 = fios se juntam na ponta
+  samples: number; // subdivisões por fio
+  gravity: number; // tração para baixo
+  initialDrop: number; // caimento inicial ao sair do couro
+  noise: number; // irregularidade do percurso
+  curlRadius: number; // raio da curvatura/mola
+  curlTurns: number; // voltas de curvatura ao longo do comprimento
+  helix: number; // 0 = onda plana em S, 1 = espiral 3D
+  phaseJitter: number; // desordem de fase entre fios da mesma mecha
+  spread: number; // abertura da mecha
+  clump: number; // convergência (<1 reúne nas pontas, >1 abre pontas duplas)
   rootRadius: number;
   tipRadius: number;
+  fringeGuides: number; // mechas dedicadas à franja/rosto
+  hasAfroBase?: boolean; // base volumosa contínua para o crespo
 }
 
 export const HAIR_PRESETS: Record<HairType, HairPreset> = {
   liso: {
-    color: '#3a2a1f', roughness: 0.42,
-    guides: 380, children: 6, length: 0.95, samples: 28,
-    gravity: 0.35, initialDrop: 0.55, noise: 0.03,
-    curlRadius: 0.004, curlTurns: 1.2, helix: 0, phaseJitter: 1,
-    spread: 0.085, clump: 0.55, rootRadius: 0.01, tipRadius: 0.0035,
+    // Foto 2: Bob reto com franja completa cobrindo a testa até as sobrancelhas
+    color: '#1a130e', // Castanho escuro profundo / expresso
+    roughness: 0.35,
+    clearcoat: 0.3,
+    clearcoatRoughness: 0.15,
+    guides: 480,
+    children: 5,
+    length: 0.76, // corte bob que abraça o queixo
+    samples: 34,
+    gravity: 0.52, // caimento vertical bem alinhado
+    initialDrop: 0.82, // mechas descem rentes ao couro
+    noise: 0.015,
+    curlRadius: 0.0008, // praticamente perfeitamente reto
+    curlTurns: 0.2,
+    helix: 0,
+    phaseJitter: 0.2,
+    spread: 0.065,
+    clump: 0.52,
+    rootRadius: 0.011,
+    tipRadius: 0.004,
+    fringeGuides: 110, // franja densa e completa que preenche a testa
   },
   ondulado: {
-    color: '#4a3426', roughness: 0.48,
-    guides: 380, children: 6, length: 1.0, samples: 44,
-    gravity: 0.28, initialDrop: 0.5, noise: 0.04,
-    curlRadius: 0.04, curlTurns: 3.5, helix: 0.3, phaseJitter: 0.8,
-    spread: 0.09, clump: 0.6, rootRadius: 0.01, tipRadius: 0.0035,
+    // Foto 3: Bob ondulado com volume lateral e ondas em "S"
+    color: '#221610',
+    roughness: 0.42,
+    clearcoat: 0.25,
+    clearcoatRoughness: 0.2,
+    guides: 440,
+    children: 5,
+    length: 1.05,
+    samples: 46,
+    gravity: 0.28,
+    initialDrop: 0.52,
+    noise: 0.03,
+    curlRadius: 0.056, // ondas abertas em S visíveis
+    curlTurns: 3.2,
+    helix: 0.08, // onda predominantemente planar em S
+    phaseJitter: 0.7,
+    spread: 0.105,
+    clump: 0.58,
+    rootRadius: 0.011,
+    tipRadius: 0.004,
+    fringeGuides: 45,
   },
   cacheado: {
-    color: '#33241b', roughness: 0.55,
-    guides: 340, children: 5, length: 1.2, samples: 72,
-    gravity: 0.4, initialDrop: 0.7, noise: 0.05,
-    curlRadius: 0.035, curlTurns: 12, helix: 1, phaseJitter: 0.5,
-    spread: 0.08, clump: 0.4, rootRadius: 0.011, tipRadius: 0.004,
+    // Foto 4: Cachos espirais volumosos e definidos (ringlets 3D)
+    color: '#261912',
+    roughness: 0.48,
+    clearcoat: 0.25,
+    clearcoatRoughness: 0.25,
+    guides: 420,
+    children: 5,
+    length: 1.28,
+    samples: 68,
+    gravity: 0.34,
+    initialDrop: 0.6,
+    noise: 0.04,
+    curlRadius: 0.046, // espirais bem desenhadas
+    curlTurns: 11.5,
+    helix: 1.0, // espiral tridimensional completa
+    phaseJitter: 0.5,
+    spread: 0.115,
+    clump: 0.36, // cachos bem agrupados em tubos nas pontas
+    rootRadius: 0.0115,
+    tipRadius: 0.0042,
+    fringeGuides: 50, // cachos que emolduram o rosto
   },
   crespo: {
-    color: '#2b1d15', roughness: 0.72,
-    guides: 320, children: 4, length: 0.55, samples: 56,
-    gravity: 0.04, initialDrop: 0.02, noise: 0.07,
-    curlRadius: 0.02, curlTurns: 16, helix: 1, phaseJitter: 0.4,
-    spread: 0.09, clump: 0.5, rootRadius: 0.012, tipRadius: 0.005,
+    // Foto 5: Halo afro clássico, volumoso, denso e arredondado contínuo
+    color: '#130d09', // Preto natural denso
+    roughness: 0.86,
+    clearcoat: 0.04,
+    clearcoatRoughness: 0.4,
+    guides: 460,
+    children: 5,
+    length: 0.34, // comprimento compacto para formar a nuvem/halo afro
+    samples: 48,
+    gravity: 0.01, // volume radial omnidirecional
+    initialDrop: 0.0, // fios emergem em todas as direções da cabeça
+    noise: 0.05,
+    curlRadius: 0.034, // micromolas que se entrelaçam
+    curlTurns: 13.0,
+    helix: 1.0,
+    phaseJitter: 0.5,
+    spread: 0.12,
+    clump: 0.65,
+    rootRadius: 0.012,
+    tipRadius: 0.005,
+    fringeGuides: 60,
+    hasAfroBase: true, // gera a base de volume afro que elimina qualquer transparência
   },
   seco: {
-    color: '#6b5240', roughness: 0.85,
-    guides: 340, children: 5, length: 1.0, samples: 40,
-    gravity: 0.3, initialDrop: 0.6, noise: 0.13,
-    curlRadius: 0.03, curlTurns: 6, helix: 0.5, phaseJitter: 1.4,
-    spread: 0.11, clump: 1.0, rootRadius: 0.008, tipRadius: 0.003,
+    // Foto 7 (lado direito): Desidratado, fosco, frizz e pontas abertas
+    color: '#4e3a2b', // tom mais claro e descolorido/seco
+    roughness: 0.95, // acabamento completamente fosco/sem brilho
+    clearcoat: 0.0,
+    clearcoatRoughness: 0.5,
+    guides: 420,
+    children: 5,
+    length: 1.05,
+    samples: 42,
+    gravity: 0.3,
+    initialDrop: 0.56,
+    noise: 0.17, // alto frizz e irregularidade
+    curlRadius: 0.032,
+    curlTurns: 4.8,
+    helix: 0.4,
+    phaseJitter: 1.7, // mechas desordenadas
+    spread: 0.13,
+    clump: 1.32, // fios se abrem e se espalham nas pontas (pontas duplas)
+    rootRadius: 0.009,
+    tipRadius: 0.0035,
+    fringeGuides: 35,
   },
   oleoso: {
-    color: '#1f1612', roughness: 0.2,
-    guides: 380, children: 6, length: 0.95, samples: 28,
-    gravity: 0.45, initialDrop: 0.6, noise: 0.015,
-    curlRadius: 0.003, curlTurns: 1, helix: 0, phaseJitter: 1,
-    spread: 0.07, clump: 0.3, rootRadius: 0.0105, tipRadius: 0.004,
+    // Foto 7 (lado esquerdo): Fios colados, agrupados em mechas pesadas com alto brilho
+    color: '#0e0a07', // preto profundo e saturado
+    roughness: 0.12, // alto reflexo especular
+    clearcoat: 1.0, // acabamento brilhante/úmido
+    clearcoatRoughness: 0.1,
+    guides: 440,
+    children: 5,
+    length: 0.8,
+    samples: 34,
+    gravity: 0.58, // caimento pesado que puxa para baixo
+    initialDrop: 0.85, // fios assentados à cabeça
+    noise: 0.01,
+    curlRadius: 0.0008,
+    curlTurns: 0.2,
+    helix: 0,
+    phaseJitter: 0.2,
+    spread: 0.05, // mechas agrupadas e compactas
+    clump: 0.2, // forte aglutinação nas pontas
+    rootRadius: 0.011,
+    tipRadius: 0.004,
+    fringeGuides: 50,
   },
 };
 
 // ---------- colisores ----------
 
-/** Elipsoide (em coordenadas locais da cabeça) que os fios não podem atravessar. */
 export interface ColliderSpec {
   center: [number, number, number];
   radii: [number, number, number];
@@ -98,7 +198,7 @@ interface Collider {
   center: THREE.Vector3;
   radii: THREE.Vector3;
   margin: number;
-  minY?: number; // só colide acima dessa altura (usado na cabeça, para o fio cair livre depois)
+  minY?: number;
 }
 
 // ---------- utilidades ----------
@@ -115,9 +215,150 @@ function mulberry32(a: number) {
 
 const GRAVITY = new THREE.Vector3(0, -1, 0);
 
-// Raízes distribuídas no couro cabeludo (topo e costas; testa livre).
-function sampleRoots(count: number, radii: THREE.Vector3, rng: () => number) {
-  const out: { p: THREE.Vector3; n: THREE.Vector3 }[] = [];
+// ---------- Couro Cabeludo Fechado e Contínuo (Scalp Mesh) ----------
+
+/**
+ * Constrói uma cúpula contínua de couro cabeludo que acompanha o elipsoide da cabeça
+ * e termina suavemente na linha anatômica do cabelo (testa, têmporas, orelhas e nuca).
+ * Isso elimina qualquer espaço vazio ou visual de casca de ovo rachada.
+ */
+function buildScalpGeometry(
+  radiiArr: [number, number, number],
+  type: HairType,
+  isAfro = false
+): THREE.BufferGeometry {
+  const [rx, ry, rz] = radiiArr;
+  // O afro ganha um volume base expandido para preencher a silhueta esférica (Foto 5)
+  const scaleMul = isAfro ? 1.055 : 1.004;
+  const sx = rx * scaleMul;
+  const sy = ry * scaleMul;
+  const sz = rz * scaleMul;
+
+  const uSegments = 64; // azimute em volta da cabeça
+  const vSegments = 28; // latitude da coroa até a linha do cabelo
+
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+
+  for (let iv = 0; iv <= vSegments; iv++) {
+    const v = iv / vSegments; // 0 = topo da cabeça, 1 = linha do cabelo
+
+    for (let iu = 0; iu <= uSegments; iu++) {
+      const u = iu / uSegments;
+      const phi = u * Math.PI * 2;
+
+      const cosP = Math.cos(phi);
+      const sinP = Math.sin(phi);
+
+      const xDir = sinP;
+      const zDir = cosP;
+
+      // Ângulo polar máximo para a linha anatômica do cabelo em cada direção
+      let maxTheta: number;
+      if (isAfro) {
+        // Afro: cúpula uniforme e abrangente
+        const frontBias = zDir > 0 ? 0.78 : 0.9;
+        maxTheta = Math.PI * 0.5 * frontBias;
+      } else if (type === 'liso' || type === 'oleoso') {
+        // Bob com franja: desce mais na testa frontal (+Z)
+        if (zDir > 0.15) {
+          maxTheta = Math.PI * 0.52;
+        } else if (Math.abs(xDir) > 0.6) {
+          maxTheta = Math.PI * 0.55;
+        } else {
+          maxTheta = Math.PI * 0.6;
+        }
+      } else {
+        if (zDir > 0.25) {
+          maxTheta = Math.PI * 0.49;
+        } else if (Math.abs(xDir) > 0.6) {
+          maxTheta = Math.PI * 0.54;
+        } else {
+          maxTheta = Math.PI * 0.59;
+        }
+      }
+
+      const theta = v * maxTheta;
+      const sinT = Math.sin(theta);
+      const cosT = Math.cos(theta);
+
+      const px = sx * sinT * sinP;
+      const py = sy * cosT;
+      const pz = sz * sinT * cosP;
+
+      // Para o crespo, adiciona micro-relevo na base para criar textura densa de lã/cacho
+      let disp = 1.0;
+      if (isAfro && v > 0.1) {
+        const noiseVal = Math.sin(px * 22) * Math.cos(pz * 22) * 0.007;
+        disp += noiseVal;
+      }
+
+      positions.push(px * disp, py * disp, pz * disp);
+
+      const nx = px / (sx * sx);
+      const ny = py / (sy * sy);
+      const nz = pz / (sz * sz);
+      const nLen = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      normals.push(nx / nLen, ny / nLen, nz / nLen);
+
+      uvs.push(u, v);
+    }
+  }
+
+  for (let iv = 0; iv < vSegments; iv++) {
+    for (let iu = 0; iu < uSegments; iu++) {
+      const a = iv * (uSegments + 1) + iu;
+      const b = (iv + 1) * (uSegments + 1) + iu;
+      const c = (iv + 1) * (uSegments + 1) + (iu + 1);
+      const d = iv * (uSegments + 1) + (iu + 1);
+
+      indices.push(a, b, d);
+      indices.push(b, c, d);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// ---------- Amostragem Anatômica das Raízes ----------
+
+function sampleRoots(
+  count: number,
+  radii: THREE.Vector3,
+  rng: () => number,
+  fringeGuides: number,
+  type: HairType
+) {
+  const out: { p: THREE.Vector3; n: THREE.Vector3; isFringe: boolean }[] = [];
+
+  // 1. Franja frontal dedicada cobrindo a testa (Foto 2 e Foto 6)
+  if (fringeGuides > 0) {
+    let fTries = 0;
+    while (out.length < fringeGuides && fTries < fringeGuides * 50) {
+      fTries++;
+      // Ângulo frontal em arco sobre a testa [-PI/3, PI/3]
+      const a = (rng() - 0.5) * Math.PI * 0.72;
+      // Altura da franja no hemisfério frontal
+      const y = (type === 'liso' || type === 'oleoso') ? 0.2 + rng() * 0.28 : 0.24 + rng() * 0.24;
+      const r = Math.sqrt(Math.max(0, 1 - y * y));
+      const s = new THREE.Vector3(r * Math.sin(a), y, r * Math.cos(a));
+      out.push({
+        p: s.clone().multiply(radii),
+        n: s.clone().divide(radii).normalize(),
+        isFringe: true,
+      });
+    }
+  }
+
+  // 2. Cobertura completa do couro cabeludo (topo, têmporas, laterais e nuca)
   let tries = 0;
   while (out.length < count && tries < count * 60) {
     tries++;
@@ -125,11 +366,15 @@ function sampleRoots(count: number, radii: THREE.Vector3, rng: () => number) {
     const a = rng() * Math.PI * 2;
     const r = Math.sqrt(1 - u * u);
     const s = new THREE.Vector3(r * Math.cos(a), u, r * Math.sin(a));
-    const minY = s.z > 0 ? 0.38 : -0.2; // linha do cabelo na frente, mais baixa atrás
+
+    // Linha de corte anatômica: testa mais alta, nuca mais baixa
+    const minY = s.z > 0 ? (type === 'crespo' ? 0.18 : 0.22) : -0.28;
     if (s.y < minY) continue;
+
     out.push({
       p: s.clone().multiply(radii),
-      n: s.clone().divide(radii).normalize(), // normal do elipsoide
+      n: s.clone().divide(radii).normalize(),
+      isFringe: false,
     });
   }
   return out;
@@ -148,7 +393,7 @@ function pushOut(p: THREE.Vector3, c: Collider) {
   }
 }
 
-// Fio-guia: caminha com gravidade e escorrega sobre cabeça e ombros (colisão com elipsoides).
+// Fio-guia: caminha com gravidade e contorna cabeça e ombros
 function makeGuide(
   root: THREE.Vector3,
   normal: THREE.Vector3,
@@ -156,10 +401,21 @@ function makeGuide(
   unit: number,
   colliders: Collider[],
   rng: () => number,
+  isFringe: boolean
 ) {
   const segments = 12;
-  const step = (cfg.length * unit) / segments;
-  const dir = normal.clone().lerp(GRAVITY, cfg.initialDrop).normalize();
+  // Franja tem comprimento menor para cair na testa/sobrancelha sem cobrir o rosto inteiro
+  const guideLength = isFringe && (cfg.length > 0.5) ? cfg.length * 0.52 : cfg.length;
+  const step = (guideLength * unit) / segments;
+
+  // Direção inicial: a franja cai para frente e para baixo
+  let dir = normal.clone();
+  if (isFringe) {
+    dir.addScaledVector(GRAVITY, 0.85).normalize();
+  } else {
+    dir.lerp(GRAVITY, cfg.initialDrop).normalize();
+  }
+
   const p = root.clone();
   const pts = [p.clone()];
 
@@ -177,7 +433,7 @@ function makeGuide(
   return pts;
 }
 
-// ---------- gerador principal ----------
+// ---------- Gerador Principal de Geometria do Cabelo ----------
 
 export interface BuildOptions {
   color?: THREE.ColorRepresentation;
@@ -189,16 +445,16 @@ export interface BuildOptions {
 export function buildHairGeometry(
   type: HairType,
   radiiArr: [number, number, number],
-  opts: BuildOptions = {},
+  opts: BuildOptions = {}
 ) {
   const cfg = HAIR_PRESETS[type] ?? HAIR_PRESETS.liso;
   const radii = new THREE.Vector3(...radiiArr);
   const unit = radii.y;
-  const sides = opts.sides ?? 5;
+  const sides = opts.sides ?? 4; // 4 lados com normais suaves otimiza polígonos mantendo visual cilíndrico
   const rng = mulberry32(opts.seed ?? 7);
 
   const colliders: Collider[] = [
-    { center: new THREE.Vector3(), radii: radii.clone(), margin: 0.04, minY: -0.25 * radii.y },
+    { center: new THREE.Vector3(), radii: radii.clone(), margin: 0.035, minY: -0.28 * radii.y },
     ...(opts.colliders ?? []).map((c) => ({
       center: new THREE.Vector3(...c.center),
       radii: new THREE.Vector3(...c.radii),
@@ -206,7 +462,7 @@ export function buildHairGeometry(
     })),
   ];
 
-  const roots = sampleRoots(cfg.guides, radii, rng);
+  const roots = sampleRoots(cfg.guides, radii, rng, cfg.fringeGuides, type);
 
   const pos: number[] = [];
   const nor: number[] = [];
@@ -214,16 +470,17 @@ export function buildHairGeometry(
   const idx: number[] = [];
 
   const base = new THREE.Color(opts.color ?? cfg.color);
-  const rootCol = base.clone().multiplyScalar(0.55); // raiz mais escura
-  const tipCol = base.clone().lerp(new THREE.Color('#ffffff'), 0.1);
+  // Raiz escura profunda e pontas com tom rico natural
+  const rootCol = base.clone().multiplyScalar(0.45);
+  const tipCol = base.clone().lerp(new THREE.Color('#ffffff'), 0.04);
   const tmp = new THREE.Color();
   const v = new THREE.Vector3();
   const nn = new THREE.Vector3();
 
   const S = cfg.samples;
 
-  for (const { p, n } of roots) {
-    const guide = makeGuide(p, n, cfg, unit, colliders, rng);
+  for (const { p, n, isFringe } of roots) {
+    const guide = makeGuide(p, n, cfg, unit, colliders, rng, isFringe);
     const curve = new THREE.CatmullRomCurve3(guide, false, 'centripetal');
     const centers = curve.getSpacedPoints(S);
     const frames = curve.computeFrenetFrames(S, false);
@@ -235,8 +492,8 @@ export function buildHairGeometry(
       const ox = Math.cos(ang) * rad;
       const oy = Math.sin(ang) * rad;
       const phase = guidePhase + (rng() - 0.5) * cfg.phaseJitter * Math.PI;
-      const count = Math.max(6, Math.floor((S + 1) * (0.75 + rng() * 0.25)));
-      const bright = 0.85 + rng() * 0.3;
+      const count = Math.max(6, Math.floor((S + 1) * (0.8 + rng() * 0.2)));
+      const bright = 0.9 + rng() * 0.2;
       const first = pos.length / 3;
 
       for (let i = 0; i < count; i++) {
@@ -245,16 +502,19 @@ export function buildHairGeometry(
         const N = frames.normals[i];
         const B = frames.binormals[i];
 
-        const ramp = THREE.MathUtils.smoothstep(s, 0, 0.12); // raiz fica presa no couro
+        const ramp = THREE.MathUtils.smoothstep(s, 0, 0.12);
+        // Na raiz, os fios filhos nascem agrupados no couro; ao longo do comprimento, abrem ou se juntam
+        const rootGroupRamp = THREE.MathUtils.lerp(0.18, 1.0, Math.min(1, s * 4.0));
         const clump = THREE.MathUtils.lerp(1, cfg.clump, s);
+
         const th = cfg.curlTurns * Math.PI * 2 * s + phase;
         const amp = cfg.curlRadius * unit * ramp;
         const cx = Math.sin(th) * amp;
         const cy = Math.cos(th) * amp * cfg.helix;
 
         v.copy(centers[i])
-          .addScaledVector(N, ox * clump + cx)
-          .addScaledVector(B, oy * clump + cy);
+          .addScaledVector(N, ox * clump * rootGroupRamp + cx)
+          .addScaledVector(B, oy * clump * rootGroupRamp + cy);
 
         const r = THREE.MathUtils.lerp(cfg.rootRadius, cfg.tipRadius, Math.pow(t, 0.7)) * unit;
         tmp.copy(rootCol).lerp(tipCol, t).multiplyScalar(bright);
@@ -289,9 +549,10 @@ export function buildHairGeometry(
   return geo;
 }
 
-// ---------- cache (cada tipo é gerado uma única vez) ----------
+// ---------- Cache de Geometrias ----------
 
-const geometryCache = new Map<string, THREE.BufferGeometry>();
+const hairGeometryCache = new Map<string, THREE.BufferGeometry>();
+const scalpGeometryCache = new Map<string, THREE.BufferGeometry>();
 
 function resolveType(type: string): HairType {
   return (HAIR_TYPE_IDS as string[]).includes(type) ? (type as HairType) : 'liso';
@@ -302,42 +563,46 @@ export function getHairGeometry(
   radii: [number, number, number],
   color?: string,
   seed = 7,
-  colliders: ColliderSpec[] = [],
+  colliders: ColliderSpec[] = []
 ) {
   const t = resolveType(type);
   const c = color ?? HAIR_PRESETS[t].color;
   const key = JSON.stringify([t, radii, c, seed, colliders]);
-  let geo = geometryCache.get(key);
+  let geo = hairGeometryCache.get(key);
   if (!geo) {
     geo = buildHairGeometry(t, radii, { color: c, seed, colliders });
-    geometryCache.set(key, geo);
+    hairGeometryCache.set(key, geo);
   }
   return geo;
 }
 
-/** Gera antes da hora (ex.: em idle) para a troca de tipo ser instantânea. */
+export function getScalpGeometry(type: string, radii: [number, number, number]) {
+  const t = resolveType(type);
+  const key = JSON.stringify([t, radii]);
+  let geo = scalpGeometryCache.get(key);
+  if (!geo) {
+    geo = buildScalpGeometry(radii, t, t === 'crespo');
+    scalpGeometryCache.set(key, geo);
+  }
+  return geo;
+}
+
 export function prebuildHair(
   type: string,
   radii: [number, number, number],
-  colliders: ColliderSpec[] = [],
+  colliders: ColliderSpec[] = []
 ) {
   getHairGeometry(type, radii, undefined, 7, colliders);
+  getScalpGeometry(type, radii);
 }
 
-// ---------- componente ----------
-
-// Tampa de couro cabeludo compartilhada (cobre os espaços entre as raízes)
-const capGeometry = new THREE.SphereGeometry(1, 48, 32, 0, Math.PI * 2, 0, Math.PI * 0.58);
+// ---------- Componente Hair ----------
 
 interface HairProps {
   type: string;
-  /** Cor base; se omitida, usa a cor do preset do tipo. */
   color?: string;
-  /** Semi-eixos do elipsoide da cabeça [x, y, z]. */
   radii: [number, number, number];
-  /** Centro da cabeça no mundo. */
   position?: [number, number, number];
-  /** Elipsoides extras (ex.: ombros) que o cabelo deve contornar, em coordenadas locais. */
   colliders?: ColliderSpec[];
   seed?: number;
 }
@@ -356,21 +621,44 @@ export default function Hair({
   const baseColor = color ?? preset.color;
   const collidersKey = JSON.stringify(colliders);
 
-  const geometry = useMemo(
+  const hairGeometry = useMemo(
     () => getHairGeometry(t, [rx, ry, rz], baseColor, seed, JSON.parse(collidersKey)),
-    [t, rx, ry, rz, baseColor, seed, collidersKey],
+    [t, rx, ry, rz, baseColor, seed, collidersKey]
   );
-  const capColor = useMemo(() => new THREE.Color(baseColor).multiplyScalar(0.5), [baseColor]);
+
+  const scalpGeometry = useMemo(
+    () => getScalpGeometry(t, [rx, ry, rz]),
+    [t, rx, ry, rz]
+  );
+
+  // Cor base do couro cabeludo correspondente à raiz profunda do cabelo
+  const scalpColor = useMemo(
+    () => new THREE.Color(baseColor).multiplyScalar(0.42),
+    [baseColor]
+  );
 
   return (
     <group position={position}>
-      <group rotation={[-0.3, 0, 0]}>
-        <mesh geometry={capGeometry} scale={[rx * 1.015, ry * 1.015, rz * 1.015]}>
-          <meshStandardMaterial color={capColor} roughness={0.7} metalness={0} />
-        </mesh>
-      </group>
-      <mesh geometry={geometry} castShadow>
-        <meshStandardMaterial vertexColors roughness={preset.roughness} metalness={0} />
+      {/* 1. Base contínua do couro cabeludo: veda 100% o crânio e dá densidade de raiz */}
+      <mesh geometry={scalpGeometry} receiveShadow castShadow>
+        <meshStandardMaterial
+          color={scalpColor}
+          roughness={preset.roughness}
+          metalness={0}
+          envMapIntensity={0.2}
+        />
+      </mesh>
+
+      {/* 2. Mechas e tubos procedurais volumosos */}
+      <mesh geometry={hairGeometry} castShadow receiveShadow>
+        <meshPhysicalMaterial
+          vertexColors
+          roughness={preset.roughness}
+          metalness={0}
+          clearcoat={preset.clearcoat ?? 0.15}
+          clearcoatRoughness={preset.clearcoatRoughness ?? 0.2}
+          envMapIntensity={0.25} // Impede que o reflexo do studio HDR pareça arame prateado
+        />
       </mesh>
     </group>
   );

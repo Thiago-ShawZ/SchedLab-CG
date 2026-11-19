@@ -23,7 +23,7 @@ export default function HairHeadViewer({ hairTypeId }: HairHeadViewerProps) {
       <Canvas
         shadows={{ type: THREE.PCFShadowMap }}
         dpr={[1, 1.5]}
-        camera={{ position: [0, 0.32, 3.4], fov: 40 }}
+        camera={{ position: [0, 0.36, 3.65], fov: 42 }}
         gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
@@ -62,10 +62,10 @@ export default function HairHeadViewer({ hairTypeId }: HairHeadViewerProps) {
         <Environment preset="studio" />
 
         <OrbitControls
-          target={[0, 0.25, 0]}
+          target={[0, 0.32, 0]}
           enablePan={false}
-          minDistance={2.2}
-          maxDistance={4.5}
+          minDistance={2.4}
+          maxDistance={4.8}
           minPolarAngle={Math.PI / 3.2}
           maxPolarAngle={Math.PI / 1.75}
           minAzimuthAngle={-Math.PI / 2.5}
