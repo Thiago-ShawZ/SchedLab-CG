@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import Hair, { HAIR_TYPE_IDS, prebuildHair, type ColliderSpec } from './Hair';
+import Hair, { HAIR_TYPE_IDS, prebuildHair, hairShaderUniforms, type ColliderSpec } from './Hair';
 
 interface HairMannequinProps {
   hairTypeId: string | null;
@@ -14,17 +14,17 @@ function BaseHead() {
       {/* Cabeça */}
       <mesh position={[0, 0.45, 0]} castShadow receiveShadow scale={[0.82, 1.05, 0.9]}>
         <sphereGeometry args={[0.9, 36, 36]} />
-        <meshStandardMaterial color="#222630" roughness={0.65} metalness={0.06} />
+        <meshStandardMaterial color="#1a1c22" roughness={0.75} metalness={0.04} />
       </mesh>
       {/* Pescoço */}
       <mesh position={[0, -0.32, 0]} castShadow receiveShadow>
         <cylinderGeometry args={[0.3, 0.38, 0.65, 32]} />
-        <meshStandardMaterial color="#1c2028" roughness={0.7} metalness={0.06} />
+        <meshStandardMaterial color="#181a20" roughness={0.8} metalness={0.04} />
       </mesh>
       {/* Busto/Ombros */}
       <mesh position={[0, -0.75, 0]} castShadow receiveShadow scale={[1.4, 0.4, 0.8]}>
         <sphereGeometry args={[0.85, 32, 24]} />
-        <meshStandardMaterial color="#161920" roughness={0.75} metalness={0.08} />
+        <meshStandardMaterial color="#14161a" roughness={0.8} metalness={0.06} />
       </mesh>
     </group>
   );
@@ -77,7 +77,6 @@ export default function HairMannequin({ hairTypeId }: HairMannequinProps) {
     rootRef.current.scale.setScalar(currentScale.current);
 
     // 2. Medição da velocidade angular da interação do usuário com a câmera
-    // Calcula o azimute (Yaw) e a elevação (Pitch) da câmera em relação ao centro da cabeça
     const camX = camera.position.x;
     const camY = camera.position.y - HEAD_CENTER[1];
     const camZ = camera.position.z;
@@ -116,13 +115,11 @@ export default function HairMannequin({ hairTypeId }: HairMannequinProps) {
     );
 
     // 3. Simulação de Inércia Física com Spring-Damper Elástico
-    // Alvos de inércia: o cabelo resiste à aceleração da câmera com resposta nítida
     const targetLagYaw = THREE.MathUtils.clamp(-yawVelFiltered.current * 0.15, -0.22, 0.22);
     const targetLagPitch = THREE.MathUtils.clamp(-pitchVelFiltered.current * 0.12, -0.15, 0.15);
 
-    // Oscilador com retorno elástico visível (sub-amortecido para dar bounce natural)
-    const springK = 34.0; // rigidez da mola
-    const damping = 3.6; // amortecimento viscoso moderado (permite 2 oscilações de rebote)
+    const springK = 34.0;
+    const damping = 3.6;
 
     const forceYaw = (targetLagYaw - hairLagYaw.current) * springK - hairLagVelYaw.current * damping;
     hairLagVelYaw.current += forceYaw * dt;
@@ -137,19 +134,24 @@ export default function HairMannequin({ hairTypeId }: HairMannequinProps) {
     // 4. Micro-movimento orgânico de repouso (fios com vida mesmo sem arrastar)
     const idleHairYaw = Math.sin(t * 1.5) * 0.016;
     const idleHairRoll = Math.cos(t * 1.2) * 0.014;
-    const idleBounce = Math.sin(t * 2.2) * 0.007;
+    const idleBounce = Math.max(0, Math.sin(t * 2.2) * 0.006); // Nunca afunda para baixo da cabeça
 
-    // 5. Aplicação direta no grupo de física do cabelo
+    // 5. Atualiza uniforms do shader da GPU para flexão orgânica dos fios livres
+    hairShaderUniforms.uTime.value = t;
+    hairShaderUniforms.uSway.value.set(hairLagYaw.current, 0, hairLagPitch.current);
+    hairShaderUniforms.uGravityBounce.value = idleBounce;
+
+    // 6. Aplicação direta no grupo de física do cabelo
     if (hairPhysicsRef.current) {
       // Giro inercial (Yaw), inclinação centrífuga (Roll) e elevação (Pitch)
       hairPhysicsRef.current.rotation.y = hairLagYaw.current + idleHairYaw;
       hairPhysicsRef.current.rotation.z = hairLagYaw.current * 0.55 + idleHairRoll;
       hairPhysicsRef.current.rotation.x = hairLagPitch.current;
 
-      // Deslocamento transversal em X e rebote elástico em Y
-      hairPhysicsRef.current.position.x = hairLagYaw.current * 0.06;
-      hairPhysicsRef.current.position.y = HEAD_CENTER[1] + idleBounce - Math.abs(hairLagYaw.current) * 0.025;
-      hairPhysicsRef.current.position.z = hairLagPitch.current * 0.035;
+      // Deslocamento transversal em X e elevação em Y (nunca afunda no crânio)
+      hairPhysicsRef.current.position.x = hairLagYaw.current * 0.05;
+      hairPhysicsRef.current.position.y = HEAD_CENTER[1] + idleBounce;
+      hairPhysicsRef.current.position.z = hairLagPitch.current * 0.025;
     }
   });
 

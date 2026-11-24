@@ -1,4 +1,4 @@
-import { Suspense, useMemo, useRef, useEffect } from 'react';
+import { Suspense, useMemo, useRef, useEffect, useState } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import ProductModel3D from './ProductModel3D';
 import PlaceholderBottle from './PlaceholderBottle';
 import ClippingPlaneHelper from './ClippingPlaneHelper';
+import CutZoomPopUp from './CutZoomPopUp';
 import type { Product } from '@/types/product';
 
 const SHAPE_BY_CATEGORY: Record<string, 'bottle' | 'tube' | 'jar' | 'dropper'> = {
@@ -41,6 +42,9 @@ interface ProductViewer3DProps {
   onPlaneChange?: (y: number, angle: number) => void;
   confirmCutTrigger?: number;
   resetCutTrigger?: number;
+  openCutZoom?: boolean;
+  onCloseCutZoom?: () => void;
+  onResetCut?: () => void;
 }
 
 function Turntable({ color }: { color: string }) {
@@ -150,6 +154,9 @@ export default function ProductViewer3D({
   onPlaneChange,
   confirmCutTrigger = 0,
   resetCutTrigger = 0,
+  openCutZoom,
+  onCloseCutZoom,
+  onResetCut,
 }: ProductViewer3DProps) {
   const shape = SHAPE_BY_CATEGORY[product.category] ?? 'bottle';
   const color = COLOR_BY_CATEGORY[product.category] ?? '#1fa87d';
@@ -168,8 +175,35 @@ export default function ProductViewer3D({
     return isCutActive ? [clippingPlane] : [];
   }, [isCutActive, clippingPlane]);
 
+  // Controle local do zoom com sincronização das props externas
+  const [internalCutZoom, setInternalCutZoom] = useState(false);
+  const isZoomVisible = openCutZoom !== undefined ? openCutZoom : internalCutZoom;
+
+  useEffect(() => {
+    if (confirmCutTrigger > 0) {
+      setInternalCutZoom(true);
+    }
+  }, [confirmCutTrigger]);
+
+  useEffect(() => {
+    if (resetCutTrigger > 0) {
+      setInternalCutZoom(false);
+    }
+  }, [resetCutTrigger]);
+
+  const handleCloseZoom = () => {
+    setInternalCutZoom(false);
+    onCloseCutZoom?.();
+  };
+
+  const handleResetFromZoom = () => {
+    setInternalCutZoom(false);
+    onCloseCutZoom?.();
+    onResetCut?.();
+  };
+
   return (
-    <div className="w-full h-full" role="img" aria-label={`Modelo 3D de ${product.name}`}>
+    <div className="relative w-full h-full" role="img" aria-label={`Modelo 3D de ${product.name}`}>
       <Canvas
         shadows={{ type: THREE.PCFShadowMap }}
         dpr={[1, 1.5]}
@@ -272,6 +306,19 @@ export default function ProductViewer3D({
           }}
         />
       </Canvas>
+
+      {/* Pop-up de detalhe ampliado (zoom) da fatia cortada */}
+      {isCutActive && isZoomVisible && (
+        <CutZoomPopUp
+          product={product}
+          color={color}
+          shape={shape}
+          planeY={planeY}
+          clippingPlanes={clippingPlanes}
+          onClose={handleCloseZoom}
+          onResetCut={handleResetFromZoom}
+        />
+      )}
     </div>
   );
 }

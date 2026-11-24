@@ -2,6 +2,7 @@ import React, { useRef, useState, useMemo, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Environment, Html, ContactShadows, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
+import { Eye, EyeOff } from 'lucide-react';
 import type { Product } from '@/types/product';
 import PlaceholderBottle from './PlaceholderBottle';
 
@@ -39,7 +40,6 @@ const EMISSIVE_HOVER = new THREE.Color('#43c497');
 const EMISSIVE_SELECTED = new THREE.Color('#1fa87d');
 
 // Clipping planes — recorta elementos fora da região de visualização da estante
-// Clip behind the back wall (z < -1.25) so nothing behind the shelf is visible
 const SHELF_CLIP_PLANES = [
   new THREE.Plane(new THREE.Vector3(0, 0, 1), 1.25),
 ];
@@ -102,7 +102,6 @@ function ShelfGLBModel({
         mesh.receiveShadow = true;
 
         const enhanceMaterial = (original: THREE.Material): THREE.Material => {
-          // Clona material original preservando mapas de textura e UVs com segurança
           const m = original.clone();
           if ('roughness' in m && typeof (m as any).roughness === 'number') {
             (m as any).roughness = THREE.MathUtils.clamp((m as any).roughness || 0.28, 0.18, 0.42);
@@ -252,9 +251,10 @@ interface ShelfProductProps {
   position: [number, number, number];
   onSelect?: (product: Product) => void;
   selectedId: string | null;
+  showLabels: boolean;
 }
 
-function ShelfProduct({ product, position, onSelect, selectedId }: ShelfProductProps) {
+function ShelfProduct({ product, position, onSelect, selectedId, showLabels }: ShelfProductProps) {
   const [hovered, setHovered] = useState(false);
   const liftRef = useRef<THREE.Group>(null);
   const currentLift = useRef(0);
@@ -306,8 +306,33 @@ function ShelfProduct({ product, position, onSelect, selectedId }: ShelfProductP
         />
       </group>
 
-      {/* Hover/selected tooltip */}
-      {(hovered || isSelected) && (
+      {/* Plaqueta elegante fixada na borda frontal da prateleira (abaixo do produto, sem sobrepor os modelos) */}
+      {showLabels && (
+        <Html
+          position={[0, -0.62, 0.85]}
+          center
+          distanceFactor={13.5}
+        >
+          <div className="pointer-events-none flex flex-col items-center select-none animate-fadeIn">
+            <div
+              className={`flex flex-col items-center justify-center rounded-lg border px-2.5 py-1 text-center shadow-lg backdrop-blur-md transition-all max-w-[125px] ${
+                isSelected
+                  ? 'border-brand-400 bg-brand-500/95 text-white shadow-brand-500/30'
+                  : hovered
+                  ? 'border-brand-500/60 bg-ink-900/95 text-brand-300 shadow-brand-500/20'
+                  : 'border-ink-700/80 bg-ink-950/90 text-ink-200'
+              }`}
+            >
+              <span className="text-[11px] font-semibold leading-tight line-clamp-2">
+                {product.name}
+              </span>
+            </div>
+          </div>
+        </Html>
+      )}
+
+      {/* Tooltip de hover somente se os rótulos globais estiverem desativados */}
+      {!showLabels && (hovered || isSelected) && (
         <Html position={[0, 1.1, 0]} center distanceFactor={9} occlude>
           <div
             className={`px-3 py-1.5 rounded-lg border text-white text-xs whitespace-nowrap pointer-events-none shadow-xl transition-colors ${
@@ -336,9 +361,10 @@ interface ShelfProps {
   products: Product[];
   onSelect?: (product: Product) => void;
   selectedId: string | null;
+  showLabels: boolean;
 }
 
-function Shelf({ products, onSelect, selectedId }: ShelfProps) {
+function Shelf({ products, onSelect, selectedId, showLabels }: ShelfProps) {
   const shelfPositions = useMemo(() => {
     const cols = 3;
     const spacing = 1.4;
@@ -393,6 +419,7 @@ function Shelf({ products, onSelect, selectedId }: ShelfProps) {
           position={shelfPositions[i]}
           onSelect={onSelect}
           selectedId={selectedId}
+          showLabels={showLabels}
         />
       ))}
     </group>
@@ -401,10 +428,10 @@ function Shelf({ products, onSelect, selectedId }: ShelfProps) {
 
 export default function HairShelf3D({ products, onSelect, compact = false }: HairShelf3DProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showLabels, setShowLabels] = useState(false);
 
   const handleSelect = (product: Product) => {
     setSelectedId(product.id);
-    // Brief delay so the selection animation is visible before navigating
     setTimeout(() => {
       onSelect?.(product);
       setSelectedId(null);
@@ -415,7 +442,7 @@ export default function HairShelf3D({ products, onSelect, compact = false }: Hai
   const cameraHeight = compact ? 1.8 : 1.5;
 
   return (
-    <div className="w-full h-full" role="img" aria-label="Estante 3D com produtos capilares">
+    <div className="relative w-full h-full" role="img" aria-label="Estante 3D com produtos capilares">
       <Canvas
         shadows={{ type: THREE.PCFShadowMap }}
         dpr={[1, 1.5]}
@@ -428,8 +455,6 @@ export default function HairShelf3D({ products, onSelect, compact = false }: Hai
       >
         <color attach="background" args={['#101218']} />
         <fog attach="fog" args={['#101218', 14, 28]} />
-
-        {/* SoftShadows removido — incompatível com Three.js 0.175+ (PCFSoftShadowMap removido) */}
 
         {/* Key light — warm, from upper right */}
         <directionalLight
@@ -463,7 +488,12 @@ export default function HairShelf3D({ products, onSelect, compact = false }: Hai
         <ambientLight intensity={0.25} />
 
         <Suspense fallback={null}>
-          <Shelf products={products} onSelect={handleSelect} selectedId={selectedId} />
+          <Shelf
+            products={products}
+            onSelect={handleSelect}
+            selectedId={selectedId}
+            showLabels={showLabels}
+          />
           <ContactShadows
             position={[0, -0.54, 0]}
             opacity={0.45}
@@ -494,6 +524,28 @@ export default function HairShelf3D({ products, onSelect, compact = false }: Hai
           }}
         />
       </Canvas>
+
+      {/* Botão no canto inferior direito para exibir/ocultar os nomes dos produtos na estante */}
+      <div className="absolute bottom-4 right-4 z-10">
+        <button
+          type="button"
+          onClick={() => setShowLabels((prev) => !prev)}
+          className={`group flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium shadow-xl backdrop-blur-md transition-all duration-200 focus-visible:ring-2 focus-visible:ring-brand-400 ${
+            showLabels
+              ? 'border-brand-500/60 bg-brand-500/25 text-brand-300 shadow-brand-500/20'
+              : 'border-ink-700/80 bg-ink-900/90 text-ink-300 hover:border-ink-600 hover:text-white'
+          }`}
+          aria-label={showLabels ? 'Ocultar nomes dos produtos na estante' : 'Exibir nomes dos produtos na estante'}
+          title={showLabels ? 'Ocultar nomes' : 'Exibir nomes dos produtos'}
+        >
+          {showLabels ? (
+            <Eye className="h-4 w-4 text-brand-400 transition-transform group-hover:scale-110" aria-hidden="true" />
+          ) : (
+            <EyeOff className="h-4 w-4 text-ink-400 transition-transform group-hover:scale-110" aria-hidden="true" />
+          )}
+          <span>{showLabels ? 'Ocultar nomes' : 'Exibir nomes'}</span>
+        </button>
+      </div>
     </div>
   );
 }

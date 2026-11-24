@@ -32,6 +32,7 @@ export default function ProductDetails() {
   const [planeAngle, setPlaneAngle] = useState(0);
   const [confirmCutTrigger, setConfirmCutTrigger] = useState(0);
   const [resetCutTrigger, setResetCutTrigger] = useState(0);
+  const [openCutZoom, setOpenCutZoom] = useState(false);
 
   const product = PRODUCTS.find((p) => p.id === id);
 
@@ -50,6 +51,7 @@ export default function ProductDetails() {
 
   const handleConfirmCut = () => {
     setConfirmCutTrigger((c) => c + 1);
+    setOpenCutZoom(true);
   };
 
   const handleResetPlane = () => {
@@ -60,6 +62,7 @@ export default function ProductDetails() {
   const handleExitCut = () => {
     setIsCutActive(false);
     setResetCutTrigger((c) => c + 1);
+    setOpenCutZoom(false);
   };
 
   if (!product) {
@@ -127,6 +130,9 @@ export default function ProductDetails() {
                 onPlaneChange={handlePlaneChange}
                 confirmCutTrigger={confirmCutTrigger}
                 resetCutTrigger={resetCutTrigger}
+                openCutZoom={openCutZoom}
+                onCloseCutZoom={() => setOpenCutZoom(false)}
+                onResetCut={handleExitCut}
               />
             </Suspense>
 
