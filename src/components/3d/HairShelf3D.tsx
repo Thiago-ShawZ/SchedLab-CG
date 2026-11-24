@@ -306,27 +306,33 @@ function ShelfProduct({ product, position, onSelect, selectedId, showLabels }: S
         />
       </group>
 
-      {/* Plaqueta elegante fixada na borda frontal da prateleira (abaixo do produto, sem sobrepor os modelos) */}
+      {/* Plaqueta elegante posicionada logo abaixo da prateleira (sem cobrir os modelos e sem sobreposição) */}
       {showLabels && (
         <Html
-          position={[0, -0.62, 0.85]}
+          position={[0, -0.74, 0]}
           center
-          distanceFactor={13.5}
+          distanceFactor={7.5}
         >
-          <div className="pointer-events-none flex flex-col items-center select-none animate-fadeIn">
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect?.(product);
+            }}
+            className={`pointer-events-auto cursor-pointer select-none flex flex-col items-center justify-center rounded-lg border px-2 py-1 text-center shadow-lg backdrop-blur-md transition-all duration-200 max-w-[96px] ${
+              isSelected
+                ? 'border-brand-400 bg-brand-500/95 text-white shadow-brand-500/40 ring-1 ring-brand-400/50 scale-105'
+                : hovered
+                ? 'border-brand-500/70 bg-ink-900/95 text-brand-300 shadow-brand-500/25 scale-105'
+                : 'border-ink-700/80 bg-ink-950/92 text-ink-200 hover:border-ink-500 hover:text-white'
+            }`}
+          >
             <div
-              className={`flex flex-col items-center justify-center rounded-lg border px-2.5 py-1 text-center shadow-lg backdrop-blur-md transition-all max-w-[125px] ${
-                isSelected
-                  ? 'border-brand-400 bg-brand-500/95 text-white shadow-brand-500/30'
-                  : hovered
-                  ? 'border-brand-500/60 bg-ink-900/95 text-brand-300 shadow-brand-500/20'
-                  : 'border-ink-700/80 bg-ink-950/90 text-ink-200'
-              }`}
-            >
-              <span className="text-[11px] font-semibold leading-tight line-clamp-2">
-                {product.name}
-              </span>
-            </div>
+              className="w-1.5 h-1.5 rounded-full mb-0.5 shrink-0"
+              style={{ backgroundColor: color }}
+            />
+            <span className="text-[10px] font-semibold leading-tight line-clamp-2">
+              {product.name}
+            </span>
           </div>
         </Html>
       )}

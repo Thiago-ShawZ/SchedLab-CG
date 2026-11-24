@@ -115,26 +115,26 @@ export default function HairMannequin({ hairTypeId }: HairMannequinProps) {
     );
 
     // 3. Simulação de Inércia Física com Spring-Damper Elástico
-    const targetLagYaw = THREE.MathUtils.clamp(-yawVelFiltered.current * 0.15, -0.22, 0.22);
-    const targetLagPitch = THREE.MathUtils.clamp(-pitchVelFiltered.current * 0.12, -0.15, 0.15);
+    const targetLagYaw = THREE.MathUtils.clamp(-yawVelFiltered.current * 0.25, -0.4, 0.4);
+    const targetLagPitch = THREE.MathUtils.clamp(-pitchVelFiltered.current * 0.2, -0.3, 0.3);
 
-    const springK = 34.0;
-    const damping = 3.6;
+    const springK = 20.0; // Mola mais suave e maleável (sem rigidez artificial)
+    const damping = 2.6;  // Amortecimento orgânico com balanço secundário natural
 
     const forceYaw = (targetLagYaw - hairLagYaw.current) * springK - hairLagVelYaw.current * damping;
     hairLagVelYaw.current += forceYaw * dt;
     hairLagYaw.current += hairLagVelYaw.current * dt;
-    hairLagYaw.current = THREE.MathUtils.clamp(hairLagYaw.current, -0.22, 0.22);
+    hairLagYaw.current = THREE.MathUtils.clamp(hairLagYaw.current, -0.4, 0.4);
 
     const forcePitch = (targetLagPitch - hairLagPitch.current) * springK - hairLagVelPitch.current * damping;
     hairLagVelPitch.current += forcePitch * dt;
     hairLagPitch.current += hairLagVelPitch.current * dt;
-    hairLagPitch.current = THREE.MathUtils.clamp(hairLagPitch.current, -0.15, 0.15);
+    hairLagPitch.current = THREE.MathUtils.clamp(hairLagPitch.current, -0.3, 0.3);
 
     // 4. Micro-movimento orgânico de repouso (fios com vida mesmo sem arrastar)
-    const idleHairYaw = Math.sin(t * 1.5) * 0.016;
-    const idleHairRoll = Math.cos(t * 1.2) * 0.014;
-    const idleBounce = Math.max(0, Math.sin(t * 2.2) * 0.006); // Nunca afunda para baixo da cabeça
+    const idleHairYaw = Math.sin(t * 1.5) * 0.035;
+    const idleHairRoll = Math.cos(t * 1.2) * 0.025;
+    const idleBounce = Math.max(0, Math.sin(t * 2.2) * 0.012); // Nunca afunda para baixo da cabeça
 
     // 5. Atualiza uniforms do shader da GPU para flexão orgânica dos fios livres
     hairShaderUniforms.uTime.value = t;
@@ -143,15 +143,15 @@ export default function HairMannequin({ hairTypeId }: HairMannequinProps) {
 
     // 6. Aplicação direta no grupo de física do cabelo
     if (hairPhysicsRef.current) {
-      // Giro inercial (Yaw), inclinação centrífuga (Roll) e elevação (Pitch)
-      hairPhysicsRef.current.rotation.y = hairLagYaw.current + idleHairYaw;
-      hairPhysicsRef.current.rotation.z = hairLagYaw.current * 0.55 + idleHairRoll;
-      hairPhysicsRef.current.rotation.x = hairLagPitch.current;
+      // Giro inercial suave do topo (o resto do balanço fluido acontece nas pontas via shader)
+      hairPhysicsRef.current.rotation.y = hairLagYaw.current * 0.45 + idleHairYaw;
+      hairPhysicsRef.current.rotation.z = hairLagYaw.current * 0.25 + idleHairRoll;
+      hairPhysicsRef.current.rotation.x = hairLagPitch.current * 0.35;
 
       // Deslocamento transversal em X e elevação em Y (nunca afunda no crânio)
-      hairPhysicsRef.current.position.x = hairLagYaw.current * 0.05;
-      hairPhysicsRef.current.position.y = HEAD_CENTER[1] + idleBounce;
-      hairPhysicsRef.current.position.z = hairLagPitch.current * 0.025;
+      hairPhysicsRef.current.position.x = hairLagYaw.current * 0.025;
+      hairPhysicsRef.current.position.y = HEAD_CENTER[1] + idleBounce * 0.5;
+      hairPhysicsRef.current.position.z = hairLagPitch.current * 0.015;
     }
   });
 
